@@ -6,7 +6,8 @@ import { MONSTERS } from '../data/monsters';
 import { cur, msg, setMonsterNamer, view } from './state';
 import { addToInventory, isEquipment, learn, makeItem, rollAppearances } from './items';
 import { playerStats } from './stats';
-import { createLevel, planUniques, planPatrons, type GhostInfo } from './levels';
+import { createLevel, planUniques, planPatrons, planOmen, type GhostInfo } from './levels';
+import { OMENS } from '../data/omens';
 import { updateFov } from './fov';
 import { autoQuickSlot, playerAbilities } from './progression';
 
@@ -61,6 +62,7 @@ export function newRun(seed: number, name: string, ancestryId: string, callingId
   addToInventory(run, makeItem(run, 'p_curing'));
   planUniques(run);
   planPatrons(run);
+  planOmen(run);
   run.flags.ghosts = JSON.stringify(ghosts.filter((g) => g.depth > 1 && g.depth < 15).slice(0, 8));
   run.levels[1] = createLevel(run, 1);
   const l = cur(run);
@@ -73,6 +75,8 @@ export function newRun(seed: number, name: string, ancestryId: string, callingId
   if (potion) autoQuickSlot(run, 'i:' + potion.base);
   msg(run, `${name} the ${anc.name} ${cal.name} descends into the cellar beneath the ruined bakery of Crumbsworth.`, 'story');
   msg(run, 'Somewhere far below, Mother is waiting. Tap to move, swipe to step, hold to look.', 'story');
+  const omen = OMENS.find((o) => o.id === run.flags.omen);
+  if (omen) msg(run, `An omen: ${omen.name}. ${omen.text}`, 'warn');
   updateFov(run);
   return run;
 }

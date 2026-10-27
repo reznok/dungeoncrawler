@@ -9,6 +9,7 @@ import { rng } from './state';
 import { spawnMonster } from './monsters';
 import { itemPrice, makeItem, randomItem } from './items';
 import { PATRONS } from '../data/patrons';
+import { OMENS } from '../data/omens';
 
 export const SHRINES: Record<string, { name: string; tile: string; desc: string; offer: string }> = {
   hunger: { name: 'Shrine of the Hungry God', tile: 'dngn/altars/kikubaaqudgha', desc: 'A shrine with a mouth. It is drooling.', offer: 'Feed it 10% of your max HP, forever. Gain a talent.' },
@@ -29,6 +30,12 @@ export const SHADOW_TILES: Record<string, string> = {
 export interface GhostInfo { name: string; title: string; level: number; depth: number }
 
 /** Run-start setup: which uniques appear on which floors. */
+export function planOmen(run: Run) {
+  const r = rng(run);
+  if (r.chance(0.3)) return;
+  run.flags.omen = r.pick(OMENS).id;
+}
+
 export function planPatrons(run: Run) {
   const r = rng(run);
   const ids = r.sample(Object.keys(PATRONS), 3);
@@ -109,7 +116,8 @@ function populate(run: Run, l: Level, rooms: Room[]) {
   if (depth === MAX_DEPTH) return populateFinal(run, l, spots, take);
 
   // ---- monsters
-  const count = Math.round(5 + depth * 0.8 + r.int(0, 4));
+  const omen = String(run.flags.omen ?? '');
+  const count = Math.round((5 + depth * 0.8 + r.int(0, 4)) * (omen === 'rat_year' ? 1.2 : 1));
   for (let i = 0; i < count; i++) {
     const ood = depth >= 3 && r.chance(0.04 + depth * 0.004);
     const def = pickMonster(run, depth, ood);
@@ -118,8 +126,10 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     const at = take(def.flags?.includes('aquatic') ? floorSpotsOfType(l, [T.DEEP]) : spots);
     if (!at) continue;
     const awake = r.chance(0.2);
-    const m = spawnMonster(run, l, def.id, at.x, at.y, { awake });
+    const id = omen === 'rat_year' && depth <= 6 && r.chance(0.3) ? (depth >= 3 ? 'orange_rat' : 'rat') : omen === 'haunted' && depth >= 4 && r.chance(0.2) ? r.pick(['phantom', 'laughing_skull', 'weeping_skull', 'drowned_soul']) : def.id;
+    const m = spawnMonster(run, l, id, at.x, at.y, { awake });
     if (!m) continue;
+    if (omen === 'blood_moon') { m.maxHp = m.hp = Math.round(m.maxHp * 1.25); }
     const n = def.pack ? r.int(def.pack[0], def.level >= depth ? def.pack[0] : def.pack[1]) - 1 : 0;
     for (let k = 0; k < n; k++) placeNear(run, l, at, def.id, awake);
     if (def.followers) for (let k = 0; k < r.int(def.followers.n[0], def.followers.n[1]); k++) placeNear(run, l, at, def.followers.id, awake);
@@ -208,9 +218,9 @@ function populate(run: Run, l: Level, rooms: Room[]) {
   }
 
   // ---- items
-  const nItems = r.int(5, 9);
+  const nItems = r.int(5, 9) + (omen === 'harvest' ? 3 : 0);
   for (let i = 0; i < nItems; i++) { const at = take(spots); if (at) l.items.push({ x: at.x, y: at.y, item: randomItem(run, depth) }); }
-  const nGold = r.int(2, 5);
+  const nGold = r.int(2, 5) + (omen === 'gold_rush' ? 3 : 0);
   for (let i = 0; i < nGold; i++) { const at = take(spots); if (at) l.items.push({ x: at.x, y: at.y, item: makeItem(run, 'gold', { qty: r.int(4, 10 + depth * 6) }) }); }
   // lore note
   const usedNotes = String(run.flags.notes ?? '').split(',').filter(Boolean).map(Number);
@@ -304,7 +314,7 @@ function placeShop(run: Run, l: Level, at: Pos | null) {
     const it = randomItem(run, l.depth + 1, { cat, good: r.chance(0.3) });
     if (it.kind === 'weapon' || it.kind === 'armour') it.known = true;
     if (it.cursed) continue;
-    stock.push({ item: it, price: Math.round(itemPrice(run, it) * r.int(90, 130) / 100) });
+    stock.push({ item: it, price: Math.round(itemPrice(run, it) * r.int(90, 130) / 100 * (run.flags.omen === 'gold_rush' ? 1.5 : 1)) });
   }
   l.tiles[at.y * l.w + at.x] = T.SHOP;
   l.features.push({ kind: 'shop', x: at.x, y: at.y, id: kind, stock, data: { name: r.pick(SHOP_NAMES) } });

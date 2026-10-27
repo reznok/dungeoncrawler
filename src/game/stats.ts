@@ -69,6 +69,8 @@ export function collectMods(run: Run): Mods[] {
   }
   for (const id of p.mutations) { const m = MUTATIONS[id]; if (m?.mods) out.push(m.mods); }
   if (p.piety && PATRONS[p.piety.god]) out.push(PATRONS[p.piety.god].passive(p.piety.favor));
+  if (run.flags.omen === 'fog') out.push({ sight: -2, stealth: 6 });
+  if (run.flags.omen === 'lucky') out.push({ crit: 5, ev: 2 });
   const st = p.statuses;
   if (st.might) out.push({ dmg: 4 + (st.might.power ?? 0) });
   if (st.agile) out.push({ ev: 5, acc: 5 });

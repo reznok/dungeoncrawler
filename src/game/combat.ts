@@ -172,7 +172,7 @@ export function monsterDies(run: Run, m: Monster, killer: ActorBase | null) {
   const byPlayer = !!killer && (isPlayer(killer) || (killer as Monster).ally);
   if (byPlayer) {
     run.stats.kills++;
-    gainXp(run, monsterXp(def));
+    gainXp(run, Math.round(monsterXp(def) * (run.flags.omen === 'blood_moon' ? 1.4 : 1)));
     if (def.unique) { run.uniques[def.id] = -1; run.stats.uniques.push(m.name ?? def.name); }
     const p = run.player;
     const s = playerStats(run);

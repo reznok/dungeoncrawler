@@ -456,7 +456,7 @@ export class GameUI {
     const pend = p.pendingTalents > 0 || p.attrPoints > 0;
     this.hud.innerHTML = `
       <div class="hud-row">
-        <div class="bar"><i style="width:${Math.max(0, 100 * p.hp / s.maxHp)}%"></i><span>HP ${Math.max(0, p.hp)}/${s.maxHp}</span></div>
+        <div class="bar${p.hp < s.maxHp * 0.3 ? ' low' : ''}"><i style="width:${Math.max(0, 100 * p.hp / s.maxHp)}%"></i><span>HP ${Math.max(0, p.hp)}/${s.maxHp}</span></div>
         <div class="bar mp"><i style="width:${s.maxMp ? 100 * p.mp / s.maxMp : 0}%"></i><span>MP ${p.mp}/${s.maxMp}</span></div>
         <span class="hud-meta">D${run.depth} · L${p.level}</span>
         ${pend ? '<button class="lvlup">LEVEL UP</button>' : ''}

@@ -65,6 +65,8 @@ button { font: inherit; color: inherit; }
 .hud-row { display: flex; align-items: center; gap: 6px; }
 .bar { position: relative; flex: 1; height: 16px; border-radius: 5px; overflow: hidden; background: var(--hp-dark); border: 1px solid #00000080; }
 .bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--hp); transition: width .2s; }
+.bar.low { animation: lowhp .8s infinite; }
+@keyframes lowhp { 50% { box-shadow: 0 0 8px 2px #ff3020; } }
 .bar.mp { background: var(--mp-dark); } .bar.mp > i { background: var(--mp); }
 .bar > span { position: absolute; inset: 0; font-size: 11px; line-height: 15px; text-align: center; font-family: var(--pixel); text-shadow: 0 1px 1px #000; }
 .xpbar { height: 3px; background: #2a2418; border-radius: 2px; margin-top: 3px; overflow: hidden; } .xpbar > i { display: block; height: 100%; background: var(--xp); }
