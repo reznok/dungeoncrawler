@@ -246,7 +246,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
       used.add(at.y * l.w + at.x);
       l.items.push({ x: at.x, y: at.y, item: randomItem(run, depth + 2, { good: r.chance(0.5) }) });
     }
-    const def = pickMonster(run, depth + 2, false);
+    const def = depth >= 3 ? pickMonster(run, depth + 1, false) : undefined; // guards would be a death trap on D1-2
     if (def) for (let i = 0; i < r.int(2, 4); i++) placeNear(run, l, { x: room.x + (room.w >> 1), y: room.y + (room.h >> 1) }, def.id, false);
   }
 
