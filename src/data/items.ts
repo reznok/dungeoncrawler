@@ -97,8 +97,8 @@ export const JEWELS: Record<string, JewelDef> = Object.fromEntries([
 const C = (d: ConsumableDef) => d;
 export const CONSUMABLES: Record<string, ConsumableDef> = Object.fromEntries([
   // potions
-  C({ id: 'p_curing', name: 'potion of curing', kind: 'potion', desc: 'Heals some and cures poison, confusion and other ailments.', level: 1, weight: 30, price: 25 }),
-  C({ id: 'p_heal', name: 'potion of heal wounds', kind: 'potion', desc: 'Heals a lot of health. Tastes like cherry cough syrup and victory.', level: 2, weight: 18, price: 50 }),
+  C({ id: 'p_curing', name: 'potion of curing', kind: 'potion', desc: 'Heals some and cures poison, confusion and other ailments.', level: 1, weight: 22, price: 25 }),
+  C({ id: 'p_heal', name: 'potion of heal wounds', kind: 'potion', desc: 'Heals a lot of health. Tastes like cherry cough syrup and victory.', level: 2, weight: 14, price: 50 }),
   C({ id: 'p_mana', name: 'potion of magic', kind: 'potion', desc: 'Restores magic.', level: 2, weight: 12, price: 40 }),
   C({ id: 'p_might', name: 'potion of might', kind: 'potion', desc: 'Temporarily increases damage.', level: 1, weight: 10, price: 30 }),
   C({ id: 'p_agility', name: 'potion of nimbleness', kind: 'potion', desc: 'Temporarily increases evasion and accuracy.', level: 1, weight: 8, price: 30 }),

@@ -175,7 +175,7 @@ function computeStats(run: Run): Stats {
 function clampRes(n: number) { return Math.max(-1, Math.min(3, n)); }
 
 export function xpForLevel(level: number): number {
-  return Math.round(12 * Math.pow(level - 1, 2.3));
+  return Math.round(12 * Math.pow(level - 1, 2.45)); // cheap early levels, a steep late climb
 }
 
 export function resistMult(res: number): number {

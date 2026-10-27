@@ -15,7 +15,7 @@ import { abilityCost, canUseAbility, execAbility, randomSpot, los } from './abil
 import { addToInventory, isEquipment, isKnown, itemName, learn, makeItem, randomItem, packCount, INVENTORY_MAX } from './items';
 import { gainMutation, gainXp, levelUp, playerAbilities, canTake, autoQuickSlot, favorCost, gainFavor } from './progression';
 import { PATRONS } from '../data/patrons';
-import { createLevel, SHRINES } from './levels';
+import { createLevel, SHRINES, pickMonster } from './levels';
 import { pushFx } from './fx';
 
 export type Action =
@@ -177,6 +177,24 @@ function worldTurn(run: Run) {
   for (const f of l.features) if (f.kind === 'trap' && f.hidden && dist(f, p) <= 1 && r.chance(0.08 + s.wits * 0.004)) { f.hidden = false; msg(run, `You spot a ${f.id} trap!`, 'warn'); view.interrupt = true; }
   if (s.flags.has('teleportitis') && r.chance(1 / 160)) { msg(run, 'You feel a wrench in your gut. Space folds.', 'warn'); teleportPlayer(run); }
   noticeChecks(run);
+  wanderingSpawn(run);
+}
+
+/** Resting is never free: the longer you stay on a floor, the more things come looking for you. */
+function wanderingSpawn(run: Run) {
+  const l = cur(run);
+  const r = rng(run);
+  l.turnsHere = (l.turnsHere ?? 0) + 1;
+  if (l.depth >= MAX_DEPTH) return;
+  const every = Math.max(60, 160 - l.depth * 6);
+  if (l.turnsHere % every !== 0) return;
+  const def = pickMonster(run, l.depth, r.chance(0.15));
+  const spot = randomSpot(run, run.player, 10, 99);
+  if (!def || !spot || isVisible(run, spot.x, spot.y)) return;
+  const m = spawnMonster(run, l, def.id, spot.x, spot.y, { awake: true });
+  if (!m) return;
+  m.lastSeen = { x: run.player.x, y: run.player.y };
+  if (r.chance(0.5)) msg(run, r.pick(['You hear something coming.', 'Footsteps, somewhere behind you.', 'Something in the dark has caught your scent.']), 'warn');
 }
 
 function teleportPlayer(run: Run) {

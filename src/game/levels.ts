@@ -89,7 +89,7 @@ function spawnTable(depth: number): MonsterDef[] {
   return Object.values(MONSTERS).filter((d) => !d.unique && (d.rarity ?? 10) > 0 && d.level <= depth + 1 && d.level >= depth - 4);
 }
 
-function pickMonster(run: Run, depth: number, ood: boolean): MonsterDef | undefined {
+export function pickMonster(run: Run, depth: number, ood: boolean): MonsterDef | undefined {
   const r = rng(run);
   // out of depth: +2 levels on D5-8, +3 on D9-12, +4 after; always deeper than the floor
   const lvl = ood ? depth + (depth >= 13 ? 4 : depth >= 9 ? 3 : 2) : depth;
@@ -119,15 +119,15 @@ function populate(run: Run, l: Level, rooms: Room[]) {
 
   // ---- monsters
   const omen = String(run.flags.omen ?? '');
-  const count = Math.round((5 + depth * 0.8 + r.int(0, 4)) * (omen === 'rat_year' ? 1.2 : 1));
+  const count = Math.round((5 + depth * 1.0 + r.int(0, 4)) * (omen === 'rat_year' ? 1.2 : 1));
   for (let i = 0; i < count; i++) {
-    const ood = depth >= 5 && r.chance(0.04 + depth * 0.004);
+    const ood = depth >= 5 && r.chance(0.05 + depth * 0.008);
     const def = pickMonster(run, depth, ood);
     if (!def) continue;
     if (ood) feeling = 'danger';
     const at = take(def.flags?.includes('aquatic') ? floorSpotsOfType(l, [T.DEEP]) : spots);
     if (!at) continue;
-    const awake = r.chance(0.2);
+    const awake = r.chance(0.2 + depth * 0.02); // deeper floors are more alert
     const id = omen === 'rat_year' && depth <= 6 && r.chance(0.3) ? (depth >= 3 ? 'orange_rat' : 'rat') : omen === 'haunted' && depth >= 4 && r.chance(0.2) ? r.pick(['phantom', 'laughing_skull', 'weeping_skull', 'drowned_soul']) : def.id;
     const m = spawnMonster(run, l, id, at.x, at.y, { awake });
     if (!m) continue;

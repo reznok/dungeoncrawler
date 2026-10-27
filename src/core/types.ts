@@ -116,6 +116,7 @@ export interface Level {
   event?: string;
   visited: boolean;
   corpses: Pos[];
+  turnsHere?: number; // turns spent on this floor; wandering monsters arrive as it grows
 }
 
 export interface Player extends ActorBase {

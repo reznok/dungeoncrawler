@@ -18,6 +18,8 @@ export function spawnMonster(run: Run, l: Level, id: string, x: number, y: numbe
   };
   if (def.unique) m.name = def.name;
   if (def.flags?.includes('invisible')) m.statuses.invisible = { turns: 99999 };
+  // the deep floors bite harder: +5% HP per depth past 6, +1 damage per 3 depths past 6
+  if (l.depth > 6) { m.maxHp = m.hp = Math.round(def.hp * (1 + 0.05 * (l.depth - 6))); m.bonus = Math.floor((l.depth - 6) / 3); }
   if (run.player.piety?.god === 'rat' && (id === 'rat' || id === 'orange_rat')) m.friendly = true;
   l.monsters.push(m);
   return m;
