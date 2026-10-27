@@ -33,7 +33,7 @@ function itemInfo(ui: GameUI, it: Item): string {
   const known = isKnown(run, it.base);
   if (it.kind === 'weapon') {
     const w = WEAPONS[it.base];
-    lines.push(`<p>${esc(w.desc)}</p><p>Damage ${w.dmg[0]}d${w.dmg[1]}, speed ${w.delay < 100 ? 'fast' : w.delay > 130 ? 'slow' : 'normal'} (${w.delay}), accuracy ${w.acc >= 0 ? '+' : ''}${w.acc}${w.twoHanded ? ', two-handed' : ''}${w.reach ? ', reach 2' : ''}${w.cls === 'bow' ? ', ranged' : ''}.</p>`);
+    lines.push(`<p>${esc(w.desc)}</p><p>Damage ${w.dmg[0]}d${w.dmg[1]}, speed ${w.delay < 95 ? 'fast' : w.delay > 110 ? 'slow' : 'normal'} (${w.delay}), accuracy ${w.acc >= 0 ? '+' : ''}${w.acc}${w.twoHanded ? ', two-handed' : ''}${w.reach ? ', reach 2' : ''}${w.cls === 'bow' ? ', ranged' : ''}.</p>`);
     if (it.known && it.ego) lines.push(`<p class="props">${esc(WEAPON_EGOS[it.ego].name)}: ${esc(WEAPON_EGOS[it.ego].desc)}</p>`);
   } else if (it.kind === 'armour') {
     const a = ARMOURS[it.base];
