@@ -212,7 +212,8 @@ function doAct(run: Run, a: Action): boolean {
   switch (a.t) {
     case 'wait': spend(run, 100); return true;
     case 'rest': {
-      if (l.monsters.some((m) => !m.ally && !m.friendly && m.awake && isVisible(run, m.x, m.y) && !monDef(m).flags?.includes('aquatic') && !monDef(m).flags?.includes('stationary'))) { msg(run, 'You cannot rest with enemies nearby!', 'warn'); return false; }
+      // the same test the Rest button uses: a hostile you can actually see and that can come for you
+      if (l.monsters.some((m) => !m.ally && !m.friendly && m.awake && isVisible(run, m.x, m.y) && !(m.statuses.invisible && !s.flags.has('see_invis')) && !monDef(m).flags?.includes('aquatic') && !monDef(m).flags?.includes('stationary'))) { msg(run, 'You cannot rest with enemies nearby!', 'warn'); return false; }
       spend(run, 100); return true;
     }
     case 'move': {

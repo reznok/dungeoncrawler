@@ -60,7 +60,7 @@ function smartTurn(run: Run, r: Rng): void {
   }
   const fight = fightStep(run);
   if (typeof fight !== 'string') { act(run, fight); return; }
-  if (p.hp < s.maxHp * 0.8 || p.mp < s.maxMp * 0.5) { const rest = restStep(run); if (typeof rest !== 'string') { act(run, rest); return; } }
+  if (p.hp < s.maxHp * 0.8 || p.mp < s.maxMp * 0.5) { const rest = restStep(run); if (typeof rest !== 'string' && act(run, rest)) return; }
   const ex = exploreStep(run);
   if (typeof ex !== 'string') { if (act(run, ex)) return; }
   if (cur(run).items.some((i) => i.x === p.x && i.y === p.y)) { if (act(run, { t: 'pickup' })) return; }
