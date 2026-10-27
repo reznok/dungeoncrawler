@@ -129,6 +129,10 @@ export function stackable(it: Item): boolean { return it.kind === 'potion' || it
 
 export const INVENTORY_MAX = 26;
 
+/** Scrolls and notes are paper: they never take pack space (user, 2026-10-27). */
+export function takesSpace(it: Item): boolean { return it.kind !== 'scroll' && it.kind !== 'note'; }
+export function packCount(run: Run): number { return run.player.inventory.filter(takesSpace).length; }
+
 /** Adds to inventory, stacking where possible. Returns false if full. */
 export function addToInventory(run: Run, it: Item): boolean {
   const inv = run.player.inventory;
@@ -137,7 +141,7 @@ export function addToInventory(run: Run, it: Item): boolean {
     const same = inv.find((o) => o.base === it.base && o.family === it.family);
     if (same) { same.qty += it.qty; return true; }
   }
-  if (inv.length >= INVENTORY_MAX) return false;
+  if (takesSpace(it) && packCount(run) >= INVENTORY_MAX) return false;
   inv.push(it);
   return true;
 }

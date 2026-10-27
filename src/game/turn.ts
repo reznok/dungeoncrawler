@@ -12,7 +12,7 @@ import { playerStats, RING_SLOTS, xpForLevel } from './stats';
 import { updateFov } from './fov';
 import { canMonsterEnter, monsterAct, monsterSpeed, noise, noticeChecks, spawnMonster } from './monsters';
 import { abilityCost, canUseAbility, execAbility, randomSpot, los } from './abilities';
-import { addToInventory, isEquipment, isKnown, itemName, learn, makeItem, randomItem } from './items';
+import { addToInventory, isEquipment, isKnown, itemName, learn, makeItem, randomItem, packCount, INVENTORY_MAX } from './items';
 import { gainMutation, gainXp, levelUp, playerAbilities, canTake, autoQuickSlot, favorCost, gainFavor } from './progression';
 import { PATRONS } from '../data/patrons';
 import { createLevel, SHRINES } from './levels';
@@ -298,7 +298,7 @@ function doAct(run: Run, a: Action): boolean {
       const it = p.equip[a.slot];
       if (!it) return false;
       if (it.cursed) { msg(run, `${itemName(run, it)} is cursed and will not come off!`, 'bad'); return false; }
-      if (p.inventory.length >= 26) { msg(run, 'Your pack is full.', 'warn'); return false; }
+      if (packCount(run) >= INVENTORY_MAX) { msg(run, 'Your pack is full.', 'warn'); return false; }
       delete p.equip[a.slot];
       p.inventory.push(it);
       clampVitals(run);

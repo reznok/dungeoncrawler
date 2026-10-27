@@ -9,7 +9,7 @@ import { DISCIPLINES, TALENTS } from '../data/talents';
 import { TERRAIN, T } from '../data/terrain';
 import { cur, isVisible } from '../game/state';
 import { abilityCost, canUseAbility } from '../game/abilities';
-import { isEquipment, isKnown, itemName, itemTile, itemPrice } from '../game/items';
+import { isEquipment, isKnown, itemName, itemTile, itemPrice, packCount, INVENTORY_MAX } from '../game/items';
 import { playerAbilities, spendAttr, takeTalent, talentOffers } from '../game/progression';
 import { ancestryOf, callingOf, playerStats, xpForLevel, RING_SLOTS } from '../game/stats';
 import { threat } from '../game/combat';
@@ -111,7 +111,7 @@ export function inventory(ui: GameUI) {
     }
     html += `<div class="list-h">Equipped · ${p.gold} gold</div>`;
     html += worn.length ? worn.map(([s, it]) => row(it, s)).join('') : '<div class="m-dim">Nothing. Bold.</div>';
-    html += `<div class="list-h">Pack (${p.inventory.length}/26)</div>`;
+    html += `<div class="list-h">Pack (${packCount(run)}/${INVENTORY_MAX}) · scrolls and notes are free</div>`;
     for (const k of order) if (groups[k]) html += groups[k].map((it) => row(it)).join('');
     if (!p.inventory.length) html += '<div class="m-dim">Your pack is empty.</div>';
     return html;
