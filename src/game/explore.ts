@@ -8,14 +8,15 @@ import { nearestEnemy } from './abilities';
 import { playerStats } from './stats';
 import { MONSTERS } from '../data/monsters';
 
-function knownPassable(run: Run, x: number, y: number): boolean {
+/** Known traps are avoided, unless `traps` is set: a known trap in the only corridor must not strand the player. */
+function knownPassable(run: Run, x: number, y: number, traps = false): boolean {
   const l = cur(run);
   const i = y * l.w + x;
   if (!l.seen[i]) return false;
   const t = l.tiles[i];
   if (t === T.DOOR) return true;
   if (!playerCanEnter(run, x, y)) return false;
-  if (l.features.some((f) => f.kind === 'trap' && !f.hidden && f.x === x && f.y === y)) return false;
+  if (!traps && l.features.some((f) => f.kind === 'trap' && !f.hidden && f.x === x && f.y === y)) return false;
   return true;
 }
 
@@ -50,7 +51,9 @@ export function travelStep(run: Run, dest: Pos): Action | null {
   const p = run.player;
   const l = cur(run);
   if (p.x === dest.x && p.y === dest.y) return null;
-  const path = findPath(l.w, l.h, p, dest, (x, y) => knownPassable(run, x, y) || (x === dest.x && y === dest.y && TERRAIN[l.tiles[y * l.w + x]].walk));
+  const isDest = (x: number, y: number) => x === dest.x && y === dest.y && TERRAIN[l.tiles[y * l.w + x]].walk;
+  const path = findPath(l.w, l.h, p, dest, (x, y) => knownPassable(run, x, y) || isDest(x, y))
+    ?? findPath(l.w, l.h, p, dest, (x, y) => knownPassable(run, x, y, true) || isDest(x, y));
   if (!path || !path.length) return null;
   return stepTo(run, path[0]);
 }
@@ -73,9 +76,11 @@ export function exploreStep(run: Run): Action | string {
   for (const f of l.features) if (f.kind === 'chest' && !f.used && l.seen[f.y * l.w + f.x] && !(f.x === p.x && f.y === p.y)) targets.push({ x: f.x, y: f.y });
   for (const fi of l.items) if (fi.x === p.x && fi.y === p.y) (fi as { visited?: boolean }).visited = true;
   if (!targets.length) return 'Done exploring. Tap the stairs button to head down.';
-  const d = distanceMap(l.w, l.h, targets, (x, y) => knownPassable(run, x, y) || (x === p.x && y === p.y));
+  let traps = false;
+  let d = distanceMap(l.w, l.h, targets, (x, y) => knownPassable(run, x, y) || (x === p.x && y === p.y));
+  if (d[p.y * l.w + p.x] >= UNREACHED) { traps = true; d = distanceMap(l.w, l.h, targets, (x, y) => knownPassable(run, x, y, true) || (x === p.x && y === p.y)); }
   if (d[p.y * l.w + p.x] >= UNREACHED) return 'Nothing more you can reach.';
-  const next = downhill(l.w, l.h, d, p, (x, y) => knownPassable(run, x, y));
+  const next = downhill(l.w, l.h, d, p, (x, y) => knownPassable(run, x, y, traps));
   if (!next) return 'Done exploring.';
   return stepTo(run, next);
 }
@@ -108,7 +113,8 @@ export function fightStep(run: Run): Action | string {
   if (dist(m, p) <= 1) return { t: 'move', dx: m.x - p.x, dy: m.y - p.y };
   if (canFireAt(run, m)) return { t: 'fire', target: { x: m.x, y: m.y } };
   const l = cur(run);
-  const path = findPath(l.w, l.h, p, m, (x, y) => knownPassable(run, x, y) || (x === m.x && y === m.y));
+  const path = findPath(l.w, l.h, p, m, (x, y) => knownPassable(run, x, y) || (x === m.x && y === m.y))
+    ?? findPath(l.w, l.h, p, m, (x, y) => knownPassable(run, x, y, true) || (x === m.x && y === m.y));
   if (!path || !path.length) return 'You cannot reach it.';
   return stepTo(run, path[0]);
 }
