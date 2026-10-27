@@ -1,7 +1,7 @@
-import type { Run } from '../core/types';
+import type { Monster, Run } from '../core/types';
 import { DIRS8, dist, type Pos } from '../core/geom';
 import { T, TERRAIN } from '../data/terrain';
-import { cur, isVisible, msg, view } from './state';
+import { actorAt, cur, isPlayer, isVisible, msg, view } from './state';
 import { distanceMap, downhill, findPath, UNREACHED } from '../world/path';
 import { playerCanEnter, canFireAt, type Action } from './turn';
 import { nearestEnemy } from './abilities';
@@ -37,6 +37,13 @@ export function enemiesInView(run: Run, threatsOnly = false) {
     }
     return true;
   });
+}
+
+/** The visible hostile standing on `pos`, if any: travelling there means walking into a fight. */
+export function hostileAt(run: Run, pos: Pos): Monster | undefined {
+  const a = actorAt(run, pos.x, pos.y);
+  if (!a || isPlayer(a) || a.ally || a.friendly || a.hp <= 0) return undefined;
+  return enemiesInView(run).includes(a) ? a : undefined;
 }
 
 export function travelStep(run: Run, dest: Pos): Action | null {

@@ -71,6 +71,8 @@ button { font: inherit; color: inherit; }
 .bar > span { position: absolute; inset: 0; font-size: 11px; line-height: 15px; text-align: center; font-family: var(--pixel); text-shadow: 0 1px 1px #000; }
 .xpbar { height: 3px; background: #2a2418; border-radius: 2px; margin-top: 3px; overflow: hidden; } .xpbar > i { display: block; height: 100%; background: var(--xp); }
 .hud-meta { font-family: var(--pixel); font-size: 13px; color: var(--gold); white-space: nowrap; }
+.hud-xp { color: var(--xp); }
+@media (max-width: 359px) { .hud-xp { display: none; } }
 .chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; min-height: 0; }
 .chip { font-size: 11px; padding: 0 6px; border-radius: 8px; background: #00000060; border: 1px solid currentColor; line-height: 16px; }
 .lvlup { background: linear-gradient(#e8b83a, #a87916); color: #2a1b00; border: none; border-radius: 8px; font-family: var(--pixel); font-size: 13px; padding: 2px 8px; animation: pulse 1.2s infinite; cursor: pointer; }
@@ -78,7 +80,11 @@ button { font: inherit; color: inherit; }
 
 #mapwrap { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #000; }
 #map { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; image-rendering: pixelated; }
-#log { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px 6px; font-size: 14px; line-height: 1.25; background: linear-gradient(transparent, rgba(0, 0, 0, .78) 30%); pointer-events: auto; max-height: 40%; overflow: hidden; }
+#log { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 8px 6px 50px; font-size: 13px; line-height: 1.25; background: linear-gradient(transparent, rgba(0, 0, 0, .78) 30%); pointer-events: none; max-height: 30%; overflow: hidden; }
+.mapbtn { position: absolute; width: 36px; height: 36px; padding: 0; border-radius: 8px; background: #000a; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.mapbtn:active { border-color: var(--accent); }
+#histbtn { left: 6px; bottom: 6px; }
+#mapbtn { right: 6px; top: 6px; }
 #log div { text-shadow: 0 1px 2px #000; }
 #log .old { opacity: .55; }
 .m-good { color: var(--good); } .m-bad { color: var(--bad); } .m-warn { color: var(--warn); } .m-dim { color: var(--dim); } .m-story { color: var(--story); font-style: italic; } .m-speech { color: var(--speech); } .m-hurt { color: #ff9a8a; } .m-gold { color: var(--gold); }
@@ -122,6 +128,8 @@ button { font: inherit; color: inherit; }
 .item .eq { font-size: 11px; color: var(--good); border: 1px solid var(--good); border-radius: 6px; padding: 0 5px; }
 .detail p { margin: 6px 0; line-height: 1.35; }
 .detail .props { color: var(--good); font-size: 14px; }
+.detail .odds, .detail .cmp { font-size: 14px; background: var(--panel2); border-radius: 8px; padding: 6px 8px; }
+.detail .odds b, .detail .cmp b { color: var(--gold); font-weight: 600; }
 .btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .btnrow .btn { flex: 1 1 40%; }
 .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 14px; }

@@ -74,6 +74,7 @@ export function damage(run: Run, t: ActorBase, amount: number, el: Element, opts
   if (isPlayer(t)) {
     run.stats.damageTaken += dmg;
     view.interrupt = true;
+    if (t.statuses.asleep && t.hp > 0) { delete t.statuses.asleep; msg(run, 'The pain jolts you awake!', 'warn'); }
     const s = playerStats(run);
     if (t.hp > 0 && t.hp < s.maxHp * 0.25 && s.flags.has('divine_shield') && (run.player.shieldReadyTurn ?? 0) <= run.turn) {
       addStatus(run, t, 'shielded', 30, 10 + run.player.level * 2);
@@ -379,15 +380,28 @@ export function monsterAttack(run: Run, m: Monster, t: Player | Monster) {
   }
 }
 
-/** For UI: a rough description of how dangerous a monster is relative to the player. */
+const avgDice = (d: [number, number]) => d[0] * (d[1] + 1) / 2;
+
+/** For UI: how dangerous a monster is, from expected hits-to-kill and its expected damage per player turn vs current HP. */
 export function threat(run: Run, m: Monster): 'trivial' | 'easy' | 'tough' | 'nasty' {
   const def = monDef(m);
-  const lvl = run.player.level;
-  const diff = def.level * 1.6 + (def.unique ? 4 : 0) - lvl;
-  if (diff < -6) return 'trivial';
-  if (diff < 0) return 'easy';
-  if (diff < 5) return 'tough';
-  return 'nasty';
+  const p = run.player;
+  const s = playerStats(run);
+  const w = s.weapon;
+  // your average damage per hit (crits, egos and backstabs ignored)
+  let mine = (w.cls === 'unarmed' ? (5 + s.unarmed) / 2 : avgDice(w.dmg)) + s.dmg + (s.weaponItem?.ench ?? 0);
+  mine *= 1 + (w.cls === 'bow' ? s.rangedPct : s.meleePct) / 100;
+  if (p.statuses.weak) mine *= 0.7;
+  mine = Math.max(1, mine - monsterAc(m) / 2);
+  const hits = Math.ceil(m.hp / mine);
+  // its expected damage per player turn
+  let theirs = Math.max(1, avgDice(def.dmg) + (m.bonus ?? 0) - s.ac / 2);
+  theirs *= chanceToHit(monsterAcc(def), s.ev) * (1 - s.block / 100) * (def.speed ?? 10) / 10;
+  const frac = theirs / Math.max(1, p.hp);
+  const order = ['trivial', 'easy', 'tough', 'nasty'] as const;
+  let i = hits <= 2 && frac <= 0.1 ? 0 : hits <= 5 && frac < 0.25 ? 1 : frac >= 0.5 || hits > 12 ? 3 : 2;
+  if (def.unique) i = Math.min(3, i + 1);
+  return order[i];
 }
 
 export function weaponReach(): number { return 1; }

@@ -73,6 +73,7 @@ export function newRun(seed: number, name: string, ancestryId: string, callingId
   for (const ab of playerAbilities(run)) autoQuickSlot(run, 'a:' + ab.id);
   const potion = player.inventory.find((i) => i.kind === 'potion');
   if (potion) autoQuickSlot(run, 'i:' + potion.base);
+  if (player.inventory.some((i) => i.base === 's_blink')) autoQuickSlot(run, 'i:s_blink'); // the panic button
   msg(run, `${name} the ${anc.name} ${cal.name} descends into the cellar beneath the ruined bakery of Crumbsworth.`, 'story');
   msg(run, 'Somewhere far below, Mother is waiting. Tap to move, swipe to step, hold to look.', 'story');
   const omen = OMENS.find((o) => o.id === run.flags.omen);

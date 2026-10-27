@@ -17,9 +17,10 @@ import { SHRINES } from '../game/levels';
 import { PATRONS } from '../data/patrons';
 import { favorCost } from '../game/progression';
 import { saveRun, deleteSave, saveSettings } from '../game/save';
+import { previewFight } from '../game/preview';
 import { esc, openPanel, toast } from './dom';
 import { icon, stackIcon } from './tiles';
-import { dollKeys } from './renderer';
+import { dollKeys, ZOOM_CELLS } from './renderer';
 import type { GameUI } from './game';
 
 type Next = (() => void) | undefined;
@@ -50,7 +51,37 @@ function itemInfo(ui: GameUI, it: Item): string {
   if (it.art && it.known) lines.push(`<p class="props">${it.art.props.map((p) => esc(p.text)).join(' · ')}</p>`);
   if (it.cursed && it.known) lines.push('<p class="m-bad">Cursed: once worn, it will not come off.</p>');
   if (!it.known && isEquipment(it) && (it.kind === 'weapon' || it.kind === 'armour')) lines.push('<p class="m-dim">Its enchantment is unknown until you use it.</p>');
+  lines.push(compareInfo(ui, it));
   return lines.join('');
+}
+
+/** "Currently: ..." line for equipment not being worn: AC/EV delta for armour, damage per 100 energy for weapons. */
+function compareInfo(ui: GameUI, it: Item): string {
+  const run = ui.run;
+  const eq = run.player.equip;
+  if (!isEquipment(it) || equippedSlot(ui, it)) return '';
+  const nm = (o: Item | null | undefined) => o ? esc(itemName(run, o)) : 'nothing';
+  const ench = (o: Item) => o.known ? o.ench ?? 0 : 0;
+  const sign = (n: number) => (n > 0 ? '+' : '') + n;
+  if (it.kind === 'weapon') {
+    const per = (o: Item) => { const w = WEAPONS[o.base]; return (w.dmg[0] * (w.dmg[1] + 1) / 2 + ench(o)) * 100 / w.delay; };
+    const old = eq.weapon;
+    return `<p class="cmp">Currently: ${nm(old)}${old ? '' : ' (bare hands)'}<br>Damage per 100 energy: <b>${per(it).toFixed(1)}</b>${old && WEAPONS[old.base] ? ` vs ${per(old).toFixed(1)}` : ''}</p>`;
+  }
+  if (it.kind === 'armour') {
+    const a = ARMOURS[it.base];
+    const old = eq[a.slot];
+    const oa = old && ARMOURS[old.base];
+    const dAc = a.ac + ench(it) - (oa ? oa.ac + ench(old) : 0), dEv = (a.ev ?? 0) - (oa?.ev ?? 0);
+    const cls = (n: number) => n > 0 ? 'm-good' : n < 0 ? 'm-bad' : 'm-dim';
+    return `<p class="cmp">Currently: ${nm(old)}<br><span class="${cls(dAc)}">AC ${sign(dAc)}</span>, <span class="${cls(dEv)}">EV ${sign(dEv)}</span></p>`;
+  }
+  if (it.kind === 'amulet') return `<p class="cmp">Currently: ${nm(eq.amulet)}</p>`;
+  if (it.kind === 'ring') {
+    const worn = RING_SLOTS.map((s) => eq[s]).filter((o): o is Item => !!o);
+    return `<p class="cmp">Currently: ${worn.length ? worn.map(nm).join(', ') : 'no rings'}</p>`;
+  }
+  return '';
 }
 
 function equippedSlot(ui: GameUI, it: Item): Slot | null {
@@ -293,6 +324,12 @@ export function quickAssign(ui: GameUI, slot: number) {
 
 // ------------------------------------------------------------------ world interactions
 
+function fightNumbers(run: GameUI['run'], m: Monster): string {
+  const f = previewFight(run, m);
+  return `<p class="odds">You hit it about <b>${f.youHit}%</b> of the time; it hits you about <b>${f.itHits}%</b>.<br>It hits for about <b>${f.itsDamage}</b>. Speed: <b>${f.speed}</b>.</p>` +
+    (f.specials.length ? `<p class="odds">Special: ${f.specials.map(esc).join(', ')}.</p>` : '');
+}
+
 export function examine(ui: GameUI, cell: Pos) {
   const run = ui.run;
   const l = cur(run);
@@ -310,7 +347,7 @@ export function examine(ui: GameUI, cell: Pos) {
     const hpTxt = m.hp >= m.maxHp ? 'unhurt' : m.hp > m.maxHp * 0.6 ? 'lightly wounded' : m.hp > m.maxHp * 0.3 ? 'badly wounded' : 'almost dead';
     const sts = Object.keys(m.statuses).filter((k) => STATUSES[k] && k !== 'invisible').map((k) => STATUSES[k].name.toLowerCase());
     const color = { trivial: 'var(--dim)', easy: 'var(--good)', tough: 'var(--warn)', nasty: 'var(--bad)' }[th];
-    parts.push(`<div class="detail"><div style="display:flex;gap:10px;align-items:center">${icon(m.tile ?? d.tile, 56, m.id)}<div><b style="font-size:18px">${esc(m.name ?? d.name)}</b><div class="sub" style="color:${color}">${m.ally ? 'Your ally' : m.friendly ? 'Not hostile' : th === 'nasty' ? 'Extremely dangerous' : th === 'tough' ? 'Dangerous' : th === 'easy' ? 'Manageable' : 'Harmless'} · ${hpTxt}${m.awake ? '' : ' · unaware'}${sts.length ? ' · ' + sts.join(', ') : ''}</div></div></div><p>${esc(d.desc)}</p></div>`);
+    parts.push(`<div class="detail"><div style="display:flex;gap:10px;align-items:center">${icon(m.tile ?? d.tile, 56, m.id)}<div><b style="font-size:18px">${esc(m.name ?? d.name)}</b><div class="sub" style="color:${color}">${m.ally ? 'Your ally' : m.friendly ? 'Not hostile' : th === 'nasty' ? 'Extremely dangerous' : th === 'tough' ? 'Dangerous' : th === 'easy' ? 'Manageable' : 'Harmless'} · ${hpTxt}${m.awake ? '' : ' · unaware'}${sts.length ? ' · ' + sts.join(', ') : ''}</div></div></div><p>${esc(d.desc)}</p>${m.ally || m.friendly ? '' : fightNumbers(run, m)}</div>`);
   }
   for (const fi of l.items.filter((o) => o.x === cell.x && o.y === cell.y)) parts.push(`<div class="item" style="cursor:default">${icon(itemTile(run, fi.item), 32, fi.item.id)}<div class="nm">${esc(itemName(run, fi.item))}</div></div>`);
   const f = l.features.find((o) => o.x === cell.x && o.y === cell.y && !(o.kind === 'trap' && o.hidden));
@@ -443,7 +480,7 @@ export function mainMenu(ui: GameUI) {
     if (m === 'zoom') {
       ui.settings.zoom = (ui.settings.zoom + 1) % 3;
       saveSettings(ui.settings);
-      ui.renderer.setZoom([9, 11, 14][ui.settings.zoom]);
+      ui.renderer.setZoom(ZOOM_CELLS[ui.settings.zoom] ?? 13);
       (e.target as HTMLElement).closest('[data-m]')!.textContent = `Zoom: ${zoomNames[ui.settings.zoom]}`;
       return;
     }

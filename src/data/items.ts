@@ -113,7 +113,7 @@ export const CONSUMABLES: Record<string, ConsumableDef> = Object.fromEntries([
   C({ id: 'p_gain', name: 'potion of potential', kind: 'potion', desc: 'Permanently raises a random attribute by 1.', level: 4, weight: 2, price: 300 }),
   C({ id: 'p_porridge', name: 'potion of porridge', kind: 'potion', desc: 'It is porridge. In a potion bottle. Restores 1 health and your will to live.', level: 1, weight: 4, price: 5 }),
   C({ id: 'p_poison', name: 'potion of poison', kind: 'potion', desc: 'Poisons the drinker. Do not drink. You will drink it.', level: 1, weight: 8, price: 5, bad: true }),
-  C({ id: 'p_sleep', name: 'potion of naptime', kind: 'potion', desc: 'You fall asleep. In a dungeon. Good luck.', level: 2, weight: 5, price: 5, bad: true }),
+  C({ id: 'p_sleep', name: 'potion of naptime', kind: 'potion', desc: 'You fall asleep. In a dungeon. Good luck.', level: 2, weight: 3, price: 5, bad: true }),
   C({ id: 'p_regret', name: 'potion of regret', kind: 'potion', desc: 'Confuses the drinker. Also you will think about that thing you said in 2009.', level: 1, weight: 5, price: 5, bad: true }),
   // scrolls
   C({ id: 's_identify', name: 'scroll of identify', kind: 'scroll', desc: 'Identifies an item.', level: 1, weight: 25, price: 20 }),

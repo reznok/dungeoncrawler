@@ -91,9 +91,11 @@ function spawnTable(depth: number): MonsterDef[] {
 
 function pickMonster(run: Run, depth: number, ood: boolean): MonsterDef | undefined {
   const r = rng(run);
-  const lvl = ood ? depth + (depth >= 8 ? r.int(3, 4) : r.int(2, 3)) : depth;
-  const top = lvl + (lvl >= 4 ? 1 : 0);
-  const pool = Object.values(MONSTERS).filter((d) => !d.unique && (d.rarity ?? 10) > 0 && d.level <= top && d.level >= lvl - 4 && d.id !== 'starter_spawn');
+  // out of depth: +2 levels on D5-8, +3 on D9-12, +4 after; always deeper than the floor
+  const lvl = ood ? depth + (depth >= 13 ? 4 : depth >= 9 ? 3 : 2) : depth;
+  const top = ood ? lvl : lvl + (lvl >= 4 ? 1 : 0);
+  const lo = ood ? depth + 1 : lvl - 4;
+  const pool = Object.values(MONSTERS).filter((d) => !d.unique && (d.rarity ?? 10) > 0 && d.level <= top && d.level >= lo && d.id !== 'starter_spawn');
   const usable = pool.length ? pool : spawnTable(depth);
   return r.weighted(usable, (d) => (d.rarity ?? 10) * Math.max(0.2, 1.6 - Math.abs(d.level - lvl) * 0.35));
 }
@@ -119,10 +121,10 @@ function populate(run: Run, l: Level, rooms: Room[]) {
   const omen = String(run.flags.omen ?? '');
   const count = Math.round((5 + depth * 0.8 + r.int(0, 4)) * (omen === 'rat_year' ? 1.2 : 1));
   for (let i = 0; i < count; i++) {
-    const ood = depth >= 3 && r.chance(0.04 + depth * 0.004);
+    const ood = depth >= 5 && r.chance(0.04 + depth * 0.004);
     const def = pickMonster(run, depth, ood);
     if (!def) continue;
-    if (ood && def.level > depth + 2) feeling = 'danger';
+    if (ood) feeling = 'danger';
     const at = take(def.flags?.includes('aquatic') ? floorSpotsOfType(l, [T.DEEP]) : spots);
     if (!at) continue;
     const awake = r.chance(0.2);
@@ -130,6 +132,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     const m = spawnMonster(run, l, id, at.x, at.y, { awake });
     if (!m) continue;
     if (omen === 'blood_moon') { m.maxHp = m.hp = Math.round(m.maxHp * 1.25); }
+    if (ood) continue; // out-of-depth monsters come alone
     const n = def.pack ? r.int(def.pack[0], def.level >= depth ? def.pack[0] : def.pack[1]) - 1 : 0;
     for (let k = 0; k < n; k++) placeNear(run, l, at, def.id, awake);
     if (def.followers) for (let k = 0; k < r.int(def.followers.n[0], def.followers.n[1]); k++) placeNear(run, l, at, def.followers.id, awake);
@@ -148,7 +151,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     if (d !== depth) continue;
     const at = take(spots);
     if (!at) continue;
-    const hunting = r.chance(0.3);
+    const hunting = depth >= 5 && r.chance(0.3); // awake and tracking you from the stairs
     const m = spawnMonster(run, l, id, at.x, at.y, { awake: hunting || r.chance(0.4) });
     if (m && hunting) m.lastSeen = { ...l.up[0] };
     const def = MONSTERS[id];
@@ -165,7 +168,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
       m.name = `the ghost of ${ghost.name} ${ghost.title}`;
       m.maxHp = m.hp = 12 + ghost.level * 7;
       m.bonus = Math.floor(ghost.level / 2);
-      feeling = 'unique';
+      if (feeling !== 'danger') feeling = 'unique';
     }
     run.flags.ghosts = JSON.stringify(ghosts.filter((g) => g !== ghost));
   }
@@ -199,7 +202,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
   // treasure box (sometimes it bites)
   if (depth >= 2 && r.chance(0.4)) {
     const at = take(spots);
-    if (at) l.features.push({ kind: 'chest', x: at.x, y: at.y, id: depth >= 3 && r.chance(0.3) ? 'mimic' : 'loot' });
+    if (at) l.features.push({ kind: 'chest', x: at.x, y: at.y, id: depth >= 4 && r.chance(0.3) ? 'mimic' : 'loot' });
   }
   // story: the Baker
   if (depth === 6 && !run.flags.bakerMet) {

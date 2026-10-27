@@ -1,11 +1,11 @@
-import type { Run } from '../core/types';
+import type { Monster, Run } from '../core/types';
 import { dist, type Pos } from '../core/geom';
 import { ABILITIES } from '../data/abilities';
 import { CONSUMABLES } from '../data/items';
 import { STATUSES } from '../data/statuses';
 import { T, TERRAIN } from '../data/terrain';
 import { act, popups, canFireAt, type Action } from '../game/turn';
-import { exploreStep, fightStep, restStep, stairsStep, travelStep, enemiesInView } from '../game/explore';
+import { exploreStep, fightStep, restStep, stairsStep, travelStep, enemiesInView, hostileAt } from '../game/explore';
 import { actorAt, cur, isVisible, msg, view } from '../game/state';
 import { playerStats, xpForLevel } from '../game/stats';
 import { abilityCost, canUseAbility, defaultTarget } from '../game/abilities';
@@ -13,14 +13,14 @@ import { itemTile, itemName } from '../game/items';
 import { playerAbilities, favorCost } from '../game/progression';
 import { saveRun, loadSettings, saveSettings } from '../game/save';
 import { findPath } from '../world/path';
-import { Renderer } from './renderer';
+import { Renderer, ZOOM_CELLS } from './renderer';
 import { MONSTERS } from '../data/monsters';
 import { threat } from '../game/combat';
 import { el, esc, toast } from './dom';
 import { icon } from './tiles';
 import * as P from './panels';
 
-type Auto = null | { kind: 'explore' | 'rest' | 'fight' | 'stairs' | 'travel'; dest?: Pos; steps: number };
+type Auto = null | { kind: 'explore' | 'rest' | 'fight' | 'stairs' | 'travel'; dest?: Pos; steps: number; target?: Monster; known?: Set<number> };
 export interface Targeting { label: string; range: number; self?: boolean; onPick: (p: Pos) => void; initial: Pos | null }
 
 export class GameUI {
@@ -35,6 +35,7 @@ export class GameUI {
   bannerEl!: HTMLElement;
   minimap!: HTMLCanvasElement;
   foesEl!: HTMLElement;
+  mapBtn!: HTMLElement;
   auto: Auto = null;
   targeting: Targeting | null = null;
   lastStep = 0;
@@ -51,7 +52,7 @@ export class GameUI {
     this.run = run;
     this.onEnd = onEnd;
     this.build();
-    this.renderer.setZoom(this.settings.zoom === 0 ? 9 : this.settings.zoom === 2 ? 13 : 11);
+    this.renderer.setZoom(ZOOM_CELLS[this.settings.zoom] ?? 13);
     requestAnimationFrame((t) => this.frame(t));
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onKey);
@@ -85,7 +86,9 @@ export class GameUI {
     this.bannerEl = el('div'); this.bannerEl.id = 'banner'; this.bannerEl.style.display = 'none';
     this.minimap = el('canvas'); this.minimap.id = 'minimap'; this.minimap.style.display = 'none';
     this.foesEl = el('div'); this.foesEl.id = 'foes';
-    wrap.append(this.canvas, this.logEl, this.ctxEl, this.foesEl, this.bannerEl, this.minimap);
+    const histBtn = el('button', 'mapbtn', icon('gui/commands/message_history', 24)); histBtn.id = 'histbtn'; histBtn.setAttribute('aria-label', 'Message history');
+    this.mapBtn = el('button', 'mapbtn', icon('gui/commands/display_map', 24)); this.mapBtn.id = 'mapbtn'; this.mapBtn.setAttribute('aria-label', 'Map');
+    wrap.append(this.canvas, this.logEl, histBtn, this.ctxEl, this.foesEl, this.bannerEl, this.minimap, this.mapBtn);
     this.quickEl = el('div'); this.quickEl.id = 'quick';
     const actions = el('div'); actions.id = 'actions';
     const A = (id: string, ico: string, label: string) => `<div class="act" data-a="${id}">${icon(ico, 24)}<span>${label}</span></div>`;
@@ -114,7 +117,8 @@ export class GameUI {
       if (t.closest('.lvlup')) P.levelUp(this);
       else P.character(this);
     });
-    this.logEl.addEventListener('click', () => P.messageLog(this));
+    histBtn.addEventListener('click', () => P.messageLog(this));
+    this.mapBtn.addEventListener('click', () => this.toggleMinimap());
     this.ctxEl.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest('[data-c]')?.getAttribute('data-c');
       if (b === 'pickup') this.doAct({ t: 'pickup' });
@@ -124,7 +128,7 @@ export class GameUI {
       if (b === 'shrine') { const f = cur(this.run).features.find((x) => x.kind === 'shrine' && x.x === this.run.player.x && x.y === this.run.player.y); if (f) P.shrine(this, f.id); }
     });
     this.bannerEl.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-cancel]')) this.cancelTarget(); });
-    this.minimap.addEventListener('click', () => { this.showMinimap = false; this.minimap.style.display = 'none'; });
+    this.minimap.addEventListener('click', () => { if (this.showMinimap) this.toggleMinimap(); });
     this.foesEl.addEventListener('click', (e) => {
       const f = (e.target as HTMLElement).closest('[data-foe]')?.getAttribute('data-foe');
       if (!f) return;
@@ -299,6 +303,7 @@ export class GameUI {
   toggleMinimap() {
     this.showMinimap = !this.showMinimap;
     this.minimap.style.display = this.showMinimap ? 'block' : 'none';
+    this.mapBtn.style.display = this.showMinimap ? 'none' : '';
     if (this.showMinimap) this.renderer.drawMinimap(this.run, this.minimap);
   }
 
@@ -390,6 +395,9 @@ export class GameUI {
 
   startAuto(kind: NonNullable<Auto>['kind'], dest?: Pos) {
     this.auto = { kind, dest, steps: 0 };
+    // travelling to a hostile is walking into a fight: only a different enemy or damage stops it
+    const target = kind === 'travel' && dest ? hostileAt(this.run, dest) : undefined;
+    if (target) { this.auto.target = target; this.auto.known = new Set(enemiesInView(this.run).map((m) => m.id)); }
     view.interrupt = false;
     this.lastStep = 0;
     this.refresh();
@@ -412,19 +420,27 @@ export class GameUI {
       case 'rest': step = restStep(run); break;
       case 'stairs': step = stairsStep(run); break;
       case 'fight': step = fightStep(run); break;
-      case 'travel': step = travelStep(run, a.dest!); if (!step) step = ''; break;
+      case 'travel': {
+        const tg = a.target;
+        if (tg) {
+          if (tg.hp <= 0 || !enemiesInView(run).includes(tg) || dist(tg, run.player) <= 1) { this.stopAuto(); return; }
+          if (tg.x !== a.dest!.x || tg.y !== a.dest!.y) { a.dest = { x: tg.x, y: tg.y }; this.renderer.path = []; }
+        }
+        step = travelStep(run, a.dest!); if (!step) step = ''; break;
+      }
     }
     if (typeof step === 'string' || !step) {
       if (step) msg(run, step, 'dim');
       this.stopAuto();
       return;
     }
-    if (a.kind === 'travel' && enemiesInView(run).length && a.steps > 0) { this.stopAuto(); return; }
+    if (a.kind === 'travel' && !a.target && enemiesInView(run).length && a.steps > 0) { this.stopAuto(); return; }
     const hpBefore = run.player.hp;
     const ok = act(run, step);
     a.steps++;
     if (a.kind === 'travel' && this.renderer.path.length) this.renderer.path.shift();
-    if (!ok || view.interrupt || run.player.hp < hpBefore) { this.after(); this.stopAuto(); return; }
+    const interrupted = a.target ? enemiesInView(run).some((m) => m !== a.target && !a.known!.has(m.id)) : view.interrupt;
+    if (!ok || interrupted || run.player.hp < hpBefore) { this.after(); this.stopAuto(); return; }
     if (a.kind === 'stairs' && step.t === 'stairs') { this.after(); this.stopAuto(); return; }
     this.after();
   }
@@ -458,13 +474,13 @@ export class GameUI {
       <div class="hud-row">
         <div class="bar${p.hp < s.maxHp * 0.3 ? ' low' : ''}"><i style="width:${Math.max(0, 100 * p.hp / s.maxHp)}%"></i><span>HP ${Math.max(0, p.hp)}/${s.maxHp}</span></div>
         <div class="bar mp"><i style="width:${s.maxMp ? 100 * p.mp / s.maxMp : 0}%"></i><span>MP ${p.mp}/${s.maxMp}</span></div>
-        <span class="hud-meta">D${run.depth} · L${p.level}</span>
+        <span class="hud-meta">D${run.depth} · L${p.level}<span class="hud-xp"> · ${Math.max(0, xpNow)}/${xpNeed}</span></span>
         ${pend ? '<button class="lvlup">LEVEL UP</button>' : ''}
       </div>
       <div class="xpbar"><i style="width:${Math.min(100, 100 * xpNow / Math.max(1, xpNeed))}%"></i></div>
       ${chips ? `<div class="chips">${chips}</div>` : ''}`;
     // log
-    const msgs = run.messages.slice(-5);
+    const msgs = run.messages.slice(-4);
     this.logEl.innerHTML = msgs.map((m, i) => `<div class="${m.cls ? 'm-' + m.cls : ''}${m.turn < run.turn - 1 && i < msgs.length - 2 ? ' old' : ''}">${esc(m.text)}</div>`).join('');
     // quick bar
     this.quickEl.innerHTML = p.quick.map((q, i) => {

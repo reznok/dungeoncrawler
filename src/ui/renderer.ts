@@ -43,11 +43,14 @@ export function dollKeys(run: Run): string[] {
 
 interface LiveFx { fx: Fx; start: number; dur: number }
 
+/** Tiles across the screen for the saved zoom setting: 0 Far, 1 Normal, 2 Close. */
+export const ZOOM_CELLS = [16, 13, 10];
+
 export class Renderer {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   dpr = 1;
-  cells = 11;
+  cells = 13;
   ts = 32; // device px per tile
   ox = 0; oy = 0; // device px offset of map cell (0,0)
   live: LiveFx[] = [];

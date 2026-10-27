@@ -187,6 +187,22 @@ function teleportPlayer(run: Run) {
 // ------------------------------------------------------------------ actions
 
 export function act(run: Run, a: Action): boolean {
+  const ok = doAct(run, a);
+  levelUpPrompt(run);
+  return ok;
+}
+
+/** After a level-up, open the talent picker once no hostile is in view (once per level; the HUD button stays for later). */
+function levelUpPrompt(run: Run) {
+  const p = run.player;
+  if (run.over || p.pendingTalents <= 0 || p.level <= Number(run.flags.promptedLevel ?? 1)) return;
+  const s = playerStats(run);
+  if (cur(run).monsters.some((m) => !m.ally && !m.friendly && m.hp > 0 && isVisible(run, m.x, m.y) && !(m.statuses.invisible && !s.flags.has('see_invis')))) return;
+  run.flags.promptedLevel = p.level;
+  if (!popups.some((q) => q.type === 'levelup')) popups.push({ type: 'levelup' });
+}
+
+function doAct(run: Run, a: Action): boolean {
   if (run.over) return false;
   const p = run.player;
   const l = cur(run);
@@ -444,8 +460,11 @@ function openChest(run: Run, f: { id: string; x: number; y: number; used?: boole
     if (m) {
       const spot = nearestFree(run, l, f, (x, y) => walkable(l.tiles[y * l.w + x]), 2);
       if (spot) { m.x = spot.x; m.y = spot.y; }
-      m.maxHp = m.hp = 15 + run.depth * 8;
-      m.bonus = Math.floor(run.depth / 2);
+      const d = run.depth, dice: [number, number] = [1 + Math.floor(d / 4), 4 + Math.floor(d / 3)];
+      m.maxHp = m.hp = 8 + d * 5;
+      // bites like (1+d/4)d(4+d/3): expressed as a bonus over the base dice so the average matches
+      const base = monDef(m).dmg;
+      m.bonus = Math.max(0, Math.round(dice[0] * (dice[1] + 1) / 2 - base[0] * (base[1] + 1) / 2));
       (m.carried ??= []).push(randomItem(run, run.depth + 3, { good: true }));
     }
     msg(run, r.pick(['You open the box. The box opens YOU. It\'s a mimic!', 'The box has teeth. Lots of teeth. MIMIC!', 'You reach for the lid and the lid reaches back. Mimic!']), 'bad');
@@ -675,7 +694,7 @@ export function quaff(run: Run, base: string) {
     case 'p_gain': { const a = r.pick(['might', 'agility', 'wits'] as const); p.attrs[a]++; msg(run, `You feel ${a === 'might' ? 'stronger' : a === 'agility' ? 'nimbler' : 'cleverer'}!`, 'good'); break; }
     case 'p_porridge': p.hp = Math.min(s.maxHp, p.hp + 1); msg(run, r.pick(['It is porridge. Not too hot, not too cold. Just right.', 'Warm porridge. You feel like your grandmother is proud of you.']), 'good'); break;
     case 'p_poison': if (s.res.poison > 0) msg(run, 'You feel slightly ill. Your stomach shrugs it off.', 'dim'); else addStatus(run, p, 'poison', 8, 2 + Math.floor(run.depth / 2)); break;
-    case 'p_sleep': msg(run, 'You feel very, very sleepy...', 'bad'); addStatus(run, p, 'asleep', 6); break;
+    case 'p_sleep': msg(run, 'You feel very, very sleepy...', 'bad'); addStatus(run, p, 'asleep', 4); break;
     case 'p_regret': addStatus(run, p, 'confused', 8); msg(run, 'You think about that thing you said in 2009. You feel confused.', 'bad'); break;
   }
 }
