@@ -509,6 +509,8 @@ export function help(ui: GameUI) {
     <p><b>Hold</b> a square to look at what is there.</p>
     <p><b>Pinch</b> to zoom.</p>
     <p><b>Explore</b> walks around automatically until something interesting happens, picking up what it finds. <b>Fight</b> attacks the nearest enemy. <b>Rest</b> waits until you are healed. <b>Stairs</b> walks to the nearest way down.</p>
+    <p>Monsters standing next to you follow you on the stairs.</p>
+    <p>Some monsters keep their distance and shoot. Corner them or close in with a dash.</p>
     <p>The <b>quick bar</b> holds abilities and items. Tap an empty slot (or hold a full one) to change it.</p>
     <p><b>Tap an ability</b> to arm it, tap it again to fire at the marked enemy, or tap any enemy on the map. Swipe left/right to change target. Tap yourself or ✕ to cancel.</p>
     <p>Things you left behind are listed at the top of the <b>Bag</b>, with a <b>Go</b> button to walk back to them.</p>

@@ -84,6 +84,7 @@ export const ART_NOUN = ['Despair', 'Grandmother', 'Breakfast', 'the Drowned', '
 export const ART_TITLES = ['the {adj} {item} of {noun}', '{item} "{adj}"', 'the {item} of {noun}', '{noun}\'s {item}', 'the {adj} {item}'];
 
 export const SHOP_NAMES = ['Gubbins\' Discount Curios', 'Ye Olde Loot Shoppe', 'The Mimic\'s Rest (Not A Mimic)', 'Bargains Below', 'Shady Pete\'s', 'The Last Shop Before the End', 'Wares of Questionable Origin', 'Big Gerald\'s Emporium', 'Stuff & Things', 'Crumbsworth Outlet Store'];
+export const BAZAAR_SHOP_NAMES = ['The Bazaar of Bad Ideas', 'Honest Ibn\'s'];
 export const SHOPKEEPER_LINES = ['"Welcome! No refunds."', '"What\'re ya buyin\'?"', '"Thank you, come again! Or don\'t. Statistically you won\'t."', '"Everything must go! Including, ideally, you."', '"Hehehe, thank you!"'];
 
 export const DEATH_QUIPS = ['YOU DIED', 'Rest in pieces.', 'Git gud.', 'Game over, man. Game over!', 'A winner is not you.', 'Wasted.', 'Mother is pleased.', 'Your bones will become part of the dungeon.', 'Press F.'];

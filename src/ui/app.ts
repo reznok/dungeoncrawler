@@ -5,7 +5,8 @@ import { WIN_TEXT, DEATH_QUIPS } from '../data/flavor';
 import { MONSTERS } from '../data/monsters';
 import { newRun } from '../game/run';
 import { loadRun, hasSave, hallOfFame, recordRun, saveRun, deleteSave } from '../game/save';
-import { ancestryOf, callingOf } from '../game/stats';
+import { ancestryOf, callingOf, playerStats } from '../game/stats';
+import { isKnown, itemName } from '../game/items';
 import { GameUI } from './game';
 import { el, esc, openPanel } from './dom';
 import { icon } from './tiles';
@@ -97,12 +98,15 @@ export class App {
 
   play(run: Run) {
     this.root.innerHTML = '';
-    this.game = new GameUI(this.root, run, (r) => this.end(r));
+    this.game = new GameUI(this.root, run, (r, hp) => this.end(r, hp));
     if (import.meta.env.DEV) (window as unknown as { game: GameUI }).game = this.game;
   }
 
-  end(run: Run) {
+  end(run: Run, hpBefore?: number) {
     const p = run.player;
+    const maxHp = playerStats(run).maxHp;
+    const unused = p.inventory.filter((it) => (it.kind === 'potion' || it.kind === 'scroll' || (it.kind === 'wand' && (it.charges ?? 0) > 0)) && isKnown(run, it.base))
+      .map((it) => { const n = itemName(run, it); return it.qty > 1 ? n : (/^[aeiou]/i.test(n) ? 'an ' : 'a ') + n; });
     recordRun({ name: p.name, ancestry: ancestryOf(p).name, calling: callingOf(p).name, level: p.level, depth: run.stats.deepest, turns: run.turn, result: run.over === 'won' ? 'won' : 'dead', killedBy: run.stats.killedBy, date: Date.now(), kills: run.stats.kills });
     deleteSave();
     this.game?.destroy();
@@ -114,18 +118,21 @@ export class App {
       ${icon(won ? MONSTERS.mother.tile : 'dngn/statues/statue_wraith', 72)}
       <div class="end-title ${won ? 'won' : 'dead'}">${won ? 'VICTORY' : 'YOU DIED'}</div>
       <div class="tagline" style="max-width:420px">${esc(won ? WIN_TEXT : `${p.name} the ${ancestryOf(p).name} ${callingOf(p).name} was killed by ${run.stats.killedBy ?? 'something'} on depth ${run.depth}.`)}</div>
+      ${won ? '' : `<div class="end-why">${[hpBefore !== undefined ? `HP <b>${Math.max(0, hpBefore)}/${maxHp}</b> before the killing blow` : '', unused.length ? `Unused: <b>${unused.map(esc).join(', ')}</b>` : ''].filter(Boolean).join('<br>')}</div>`}
       <div class="info" style="max-width:360px;width:100%;text-align:left">
         Level ${p.level} · deepest ${run.stats.deepest} · ${run.turn} turns<br>
         ${run.stats.kills} kills · ${run.stats.damageDealt} damage dealt · ${run.stats.damageTaken} taken<br>
         ${run.stats.potions} potions drunk · ${run.stats.scrolls} scrolls read<br>
         ${run.stats.uniques.length ? `Slew: ${run.stats.uniques.map(esc).join(', ')}` : 'No notable kills.'}
       </div>
-      <div class="info" style="max-width:360px;width:100%;text-align:left;font-size:13px">${run.messages.slice(-6).map((m) => `<div class="${m.cls ? 'm-' + m.cls : ''}">${esc(m.text)}</div>`).join('')}</div>
+      <div class="info end-log" style="max-width:360px;width:100%;text-align:left">${run.messages.slice(-12).map((m) => `<div class="${m.cls ? 'm-' + m.cls : ''}">${esc(m.text)}</div>`).join('')}</div>
       <div class="m-dim" style="font-family:var(--pixel)">${esc(quip)}</div>
       <div class="menu-col"><button class="btn primary" data-t="new">Try again</button><button class="btn" data-t="title">Title</button></div>
     </div>`;
     this.root.innerHTML = '';
     this.root.appendChild(s);
+    const log = s.querySelector('.end-log');
+    if (log) log.scrollTop = log.scrollHeight;
     s.addEventListener('click', (e) => {
       const t = (e.target as HTMLElement).closest('[data-t]')?.getAttribute('data-t');
       if (t === 'new') this.create();

@@ -2,7 +2,8 @@ import type { Monster, Run } from '../core/types';
 import { MONSTERS } from '../data/monsters';
 import { ABILITIES } from '../data/abilities';
 import { STATUSES } from '../data/statuses';
-import { chanceToHit } from './combat';
+import { chanceToHit, monsterEv } from './combat';
+import { isSkirmisher } from './monsters';
 import { playerStats } from './stats';
 
 export interface FightPreview { youHit: number; itHits: number; itsDamage: number; speed: 'fast' | 'slow' | 'normal'; specials: string[] }
@@ -13,8 +14,7 @@ const pretty = (id: string) => id.replace(/_/g, ' ').replace(/^./, (c) => c.toUp
 export function previewFight(run: Run, m: Monster): FightPreview {
   const def = MONSTERS[m.def];
   const s = playerStats(run);
-  const helpless = !!(m.statuses.paralysed || m.statuses.asleep || m.statuses.entangled);
-  const mEv = helpless ? 0 : def.ev - (m.statuses.doughy ? 3 : 0);
+  const mEv = monsterEv(run, m);
   const mAcc = def.acc ?? Math.round(7 + def.level * 1.3);
   const pEv = run.player.statuses.paralysed || run.player.statuses.asleep ? 0 : s.ev;
   const [n, sides] = def.dmg;
@@ -26,6 +26,7 @@ export function previewFight(run: Run, m: Monster): FightPreview {
   const specials: string[] = [];
   for (const a of def.abilities ?? []) { const nm = ABILITIES[a.id]?.name ?? pretty(a.id); if (!specials.includes(nm)) specials.push(nm); }
   if (def.hit) specials.push(`${STATUSES[def.hit.status]?.name ?? pretty(def.hit.status)} on hit`);
+  if (isSkirmisher(def)) specials.push('keeps its distance');
   return {
     youHit: Math.round(100 * chanceToHit(s.acc, mEv)),
     itHits: Math.round(100 * chanceToHit(mAcc, pEv)),

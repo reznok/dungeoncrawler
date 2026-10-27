@@ -1,6 +1,6 @@
 import type { Level, Monster, Run } from '../core/types';
 import { DIRS8, dist, type Pos } from '../core/geom';
-import { MONSTERS } from '../data/monsters';
+import { MONSTERS, type MonsterDef } from '../data/monsters';
 import { ABILITIES } from '../data/abilities';
 import { T, TERRAIN } from '../data/terrain';
 import { actorAt, cur, isVisible, msg, Name, rng, tileAt, view, inside } from './state';
@@ -18,8 +18,8 @@ export function spawnMonster(run: Run, l: Level, id: string, x: number, y: numbe
   };
   if (def.unique) m.name = def.name;
   if (def.flags?.includes('invisible')) m.statuses.invisible = { turns: 99999 };
-  // the deep floors bite harder: +5% HP per depth past 6, +1 damage per 3 depths past 6
-  if (l.depth > 6) { m.maxHp = m.hp = Math.round(def.hp * (1 + 0.05 * (l.depth - 6))); m.bonus = Math.floor((l.depth - 6) / 3); }
+  // the deep floors bite harder: +5% HP per depth past 6, +1 damage per 3 depths past 6 (uniques and bosses are tuned by hand)
+  if (l.depth > 6 && !def.unique && !def.flags?.includes('boss')) { m.maxHp = m.hp = Math.round(def.hp * (1 + 0.05 * (l.depth - 6))); m.bonus = Math.floor((l.depth - 6) / 3); }
   if (run.player.piety?.god === 'rat' && (id === 'rat' || id === 'orange_rat')) m.friendly = true;
   l.monsters.push(m);
   return m;
@@ -115,6 +115,13 @@ function randomStep(run: Run, m: Monster): boolean {
   return false;
 }
 
+/** The ranged attack that makes a monster a skirmisher (keeps its distance), if any. */
+export function skirmishAbility(def: MonsterDef): string | undefined {
+  if (def.flags?.includes('mindless') || def.flags?.includes('boss')) return undefined;
+  return def.abilities?.find((ab) => { const a = ABILITIES[ab.id]; return !!a && ['bolt', 'smite', 'beam', 'ball'].includes(a.kind) && a.range >= 4 && ab.chance >= 0.2; })?.id;
+}
+export function isSkirmisher(def: MonsterDef): boolean { return !!skirmishAbility(def); }
+
 /** One action for a monster. */
 export function monsterAct(run: Run, m: Monster) {
   const def = monDef(m);
@@ -168,6 +175,9 @@ export function monsterAct(run: Run, m: Monster) {
       }
     }
   }
+  // skirmishers back off to keep shooting while their shot is ready
+  const skirm = skirmishAbility(def);
+  if (skirm && sees && dist(m, p) <= 2 && m.hp > m.maxHp * 0.3 && !((m.cooldowns[skirm] ?? 0) > 0) && r.chance(0.5) && stepAway(run, m, p)) return;
   if (adjacentFoe) { monsterAttack(run, m, adjacentFoe); return; }
   if (flags.includes('stationary')) return;
   if (m.statuses.entangled) return;
@@ -228,6 +238,11 @@ export function noticeChecks(run: Run) {
       m.lastSeen = { x: p.x, y: p.y };
       if (!monDef(m).flags?.includes('mindless') && isVisible(run, m.x, m.y)) msg(run, `${Name(run, m)} notices you.`, 'warn');
       view.interrupt = true;
+      // a pack wakes together
+      if (monDef(m).pack) for (const o of l.monsters) {
+        if (o === m || o.def !== m.def || o.ally || o.friendly || o.hp <= 0 || (o.awake && !o.statuses.asleep) || dist(o, m) > 4) continue;
+        if (r.chance(0.7)) { o.awake = true; delete o.statuses.asleep; o.lastSeen = { x: p.x, y: p.y }; }
+      }
     }
   }
 }

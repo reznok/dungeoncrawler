@@ -8,7 +8,7 @@ import { playerStats, resistMult, type Stats } from './stats';
 import { gainXp, gainFavor } from './progression';
 import { pushFx, ELEMENT_COLOR } from './fx';
 import { addToInventory, makeItem, randomItem } from './items';
-import { walkable } from '../data/terrain';
+import { T, walkable } from '../data/terrain';
 import { dist } from '../core/geom';
 
 export function monDef(m: Monster): MonsterDef { return MONSTERS[m.def]; }
@@ -73,9 +73,10 @@ export function damage(run: Run, t: ActorBase, amount: number, el: Element, opts
   if (isVisible(run, t.x, t.y)) pushFx({ kind: 'num', at: { x: t.x, y: t.y }, text: String(dmg), color: isPlayer(t) ? '#ff5050' : ELEMENT_COLOR[el] ?? '#fff', depth: run.depth });
   if (isPlayer(t)) {
     run.stats.damageTaken += dmg;
-    view.interrupt = true;
-    if (t.statuses.asleep && t.hp > 0) { delete t.statuses.asleep; msg(run, 'The pain jolts you awake!', 'warn'); }
     const s = playerStats(run);
+    // poison ticks only stop a rest once they start to matter
+    if (opts.cause !== 'poison' || t.hp < s.maxHp * 0.3) view.interrupt = true;
+    if (t.statuses.asleep && t.hp > 0) { delete t.statuses.asleep; msg(run, 'The pain jolts you awake!', 'warn'); }
     if (t.hp > 0 && t.hp < s.maxHp * 0.25 && s.flags.has('divine_shield') && (run.player.shieldReadyTurn ?? 0) <= run.turn) {
       addStatus(run, t, 'shielded', 30, 10 + run.player.level * 2);
       run.player.shieldReadyTurn = run.turn + 50;
@@ -102,7 +103,7 @@ function motherPhase(run: Run, m: Monster) {
     for (let i = 0; i < n; i++) {
       const spot = nearestFree(run, l, m, (x, y) => walkable(l.tiles[y * l.w + x]), 3);
       if (!spot) break;
-      const s = { id: run.nextId++, def: 'starter_spawn', x: spot.x, y: spot.y, hp: 30, maxHp: 30, energy: 0, statuses: {}, awake: true, cooldowns: {} } as Monster;
+      const s = { id: run.nextId++, def: 'starter_spawn', x: spot.x, y: spot.y, hp: MONSTERS.starter_spawn.hp, maxHp: MONSTERS.starter_spawn.hp, energy: 0, statuses: {}, awake: true, cooldowns: {} } as Monster;
       l.monsters.push(s);
     }
   };
@@ -158,11 +159,13 @@ export function monsterDies(run: Run, m: Monster, killer: ActorBase | null) {
   // Boris always comes back once.
   if (def.flags?.includes('returns') && !m.returned) {
     m.returned = true;
+    const seenBefore = isVisible(run, m.x, m.y);
     const spot = nearestFree(run, l, { x: r.int(1, l.w - 2), y: r.int(1, l.h - 2) }, (x, y) => walkable(l.tiles[y * l.w + x]), 20);
     if (spot) {
       m.hp = Math.round(m.maxHp * 0.6);
       m.x = spot.x; m.y = spot.y;
-      if (isVisible(run, m.x, m.y) || true) msg(run, `"I'll be back," says ${m.name ?? 'the lich'}, crumbling... and reforming somewhere else.`, 'warn');
+      if (seenBefore) msg(run, `"I'll be back," says ${m.name ?? 'the lich'}, crumbling... and reforming somewhere else.`, 'warn');
+      else msg(run, 'Somewhere on this floor, a voice: "I\'ll be back."', 'warn');
       return;
     }
   }
@@ -219,10 +222,13 @@ export function chanceToHit(acc: number, ev: number): number {
 }
 
 function monsterAcc(def: MonsterDef): number { return def.acc ?? Math.round(7 + def.level * 1.3); }
-function monsterEv(m: Monster): number {
+export function monsterEv(run: Run, m: Monster): number {
   const def = monDef(m);
   if (m.statuses.paralysed || m.statuses.asleep || m.statuses.entangled) return 0;
-  return def.ev - (m.statuses.doughy ? 3 : 0);
+  const l = cur(run);
+  const f = def.flags ?? [];
+  const wading = l.tiles[m.y * l.w + m.x] === T.SHALLOW && !f.includes('swim') && !f.includes('aquatic') && !f.includes('flying');
+  return Math.max(0, def.ev - (m.statuses.doughy ? 3 : 0) - (wading ? 4 : 0));
 }
 function monsterAc(m: Monster): number {
   return Math.max(0, monDef(m).ac - (m.statuses.corroded ? 4 : 0) - (m.statuses.doughy ? 3 : 0));
@@ -243,7 +249,7 @@ export function playerAttack(run: Run, m: Monster, opts: AttackOpts = {}): boole
   const helpless = isHelpless(m);
   let acc = s.acc;
   if (opts.ranged && dist(p, m) <= 1 && !s.flags.has('point_blank')) acc -= 6;
-  const hit = helpless || r.chance(chanceToHit(acc, monsterEv(m)));
+  const hit = helpless || r.chance(chanceToHit(acc, monsterEv(run, m)));
   m.awake = true;
   if (!hit) {
     if (isVisible(run, m.x, m.y)) msg(run, `You miss ${name(run, m)}.`, 'dim');
@@ -371,7 +377,7 @@ export function monsterAttack(run: Run, m: Monster, t: Player | Monster) {
     if (s.thorns && dmg > 0 && m.hp > 0) damage(run, m, s.thorns, 'phys', { source: t, noSplit: true });
   } else {
     // monster vs monster
-    if (!r.chance(chanceToHit(monsterAcc(def), monsterEv(t)))) { if (vis) msg(run, `${Name(run, m)} misses ${name(run, t)}.`, 'dim'); return; }
+    if (!r.chance(chanceToHit(monsterAcc(def), monsterEv(run, t)))) { if (vis) msg(run, `${Name(run, m)} misses ${name(run, t)}.`, 'dim'); return; }
     let dmg = r.roll(def.dmg[0], def.dmg[1]);
     if (m.ally) dmg *= 1 + playerStats(run).summonPct / 100;
     dmg = Math.max(0, Math.round(dmg - r.int(0, monsterAc(t))));

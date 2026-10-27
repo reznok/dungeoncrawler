@@ -4,9 +4,9 @@ import { ABILITIES } from '../data/abilities';
 import { CONSUMABLES } from '../data/items';
 import { STATUSES } from '../data/statuses';
 import { T, TERRAIN } from '../data/terrain';
-import { act, popups, canFireAt, type Action } from '../game/turn';
+import { act, popups, canFireAt, wouldFollow, type Action } from '../game/turn';
 import { exploreStep, fightStep, restStep, stairsStep, travelStep, enemiesInView, hostileAt } from '../game/explore';
-import { actorAt, cur, isVisible, msg, view } from '../game/state';
+import { actorAt, cur, isVisible, msg, view, name } from '../game/state';
 import { playerStats, xpForLevel } from '../game/stats';
 import { abilityCost, canUseAbility, los } from '../game/abilities';
 import { itemTile, itemName } from '../game/items';
@@ -16,7 +16,7 @@ import { findPath } from '../world/path';
 import { Renderer, ZOOM_CELLS } from './renderer';
 import { MONSTERS } from '../data/monsters';
 import { threat } from '../game/combat';
-import { el, esc, toast, panelDefaults, sinceOverlayClose } from './dom';
+import { el, esc, toast, openPanel, panelDefaults, sinceOverlayClose } from './dom';
 import { icon } from './tiles';
 import * as P from './panels';
 
@@ -50,21 +50,25 @@ export class GameUI {
   /** The monster last aimed at; the default target while it stays valid (not saved). */
   lastTargetId: number | null = null;
   lastHp = 0;
+  /** The player's HP just before the latest action: the death screen shows it. */
+  preHp = 0;
+  /** When Fight was last tapped (low-HP confirmation). */
+  lastFightTap = -1e9;
   lastLevel = 0;
   lastStep = 0;
   stepsSinceSave = 0;
   panelOpen = false;
   showMinimap = false;
   settings = loadSettings();
-  onEnd: (run: Run) => void;
+  onEnd: (run: Run, hpBefore: number) => void;
   alive = true;
   lastHudKey = '';
 
-  constructor(root: HTMLElement, run: Run, onEnd: (run: Run) => void) {
+  constructor(root: HTMLElement, run: Run, onEnd: (run: Run, hpBefore: number) => void) {
     this.root = root;
     this.run = run;
     this.onEnd = onEnd;
-    this.lastHp = run.player.hp;
+    this.lastHp = this.preHp = run.player.hp;
     this.lastLevel = run.player.level;
     this.build();
     this.renderer.setZoom(ZOOM_CELLS[this.settings.zoom] ?? 13);
@@ -157,7 +161,7 @@ export class GameUI {
       if (!settled()) return;
       const b = (e.target as HTMLElement).closest('[data-c]')?.getAttribute('data-c');
       if (b === 'pickup') this.doAct({ t: 'pickup' });
-      if (b === 'stairs') this.doAct({ t: 'stairs' });
+      if (b === 'stairs') this.takeStairs();
       if (b === 'shop') P.shop(this);
       if (b === 'altar') { const f = cur(this.run).features.find((x) => x.kind === 'altar' && x.x === this.run.player.x && x.y === this.run.player.y); if (f) P.patron(this, f.id); }
       if (b === 'shrine') { const f = cur(this.run).features.find((x) => x.kind === 'shrine' && x.x === this.run.player.x && x.y === this.run.player.y); if (f) P.shrine(this, f.id); }
@@ -281,7 +285,7 @@ export class GameUI {
     if (cell.x === p.x && cell.y === p.y) {
       if (l.items.some((i) => i.x === p.x && i.y === p.y)) return this.doAct({ t: 'pickup' });
       const t = l.tiles[p.y * l.w + p.x];
-      if (t === T.DOWN || t === T.UP) return this.doAct({ t: 'stairs' });
+      if (t === T.DOWN || t === T.UP) return this.takeStairs();
       if (t === T.SHOP) return P.shop(this);
       const f = l.features.find((x) => x.kind === 'shrine' && x.x === p.x && x.y === p.y && !x.used);
       if (f) return P.shrine(this, f.id);
@@ -342,16 +346,44 @@ export class GameUI {
     if (this.targeting) this.cancelTarget();
     switch (a) {
       case 'explore': return this.toggleAuto('explore');
-      case 'fight': { const s = fightStep(this.run); if (typeof s === 'string') { msg(this.run, s, 'dim'); this.refresh(); } else this.doAct(s); return; }
+      case 'fight': {
+        const s = fightStep(this.run);
+        if (typeof s === 'string') { msg(this.run, s, 'dim'); this.refresh(); return; }
+        // badly hurt: the first tap only warns, a second one within 1.5 s attacks
+        const now = performance.now(), last = this.lastFightTap;
+        this.lastFightTap = now;
+        if (this.run.player.hp < playerStats(this.run).maxHp * 0.3 && now - last > 1500) { this.buzz(30); toast(this.root, 'Badly hurt. Tap Fight again to attack anyway.', 1500); return; }
+        this.doAct(s);
+        return;
+      }
       case 'rest': return this.toggleAuto('rest');
       case 'stairs': {
         const t = cur(this.run).tiles[this.run.player.y * cur(this.run).w + this.run.player.x];
-        if (t === T.DOWN || t === T.UP) return this.doAct({ t: 'stairs' });
+        if (t === T.DOWN || t === T.UP) return this.takeStairs();
         return this.toggleAuto('stairs');
       }
       case 'bag': return P.inventory(this);
       case 'menu': return P.mainMenu(this);
     }
+  }
+
+  /** Visible hostiles next to the player that would follow it on the stairs (the rule in changeLevel), at most 4. */
+  followers(): Monster[] {
+    const p = this.run.player;
+    return enemiesInView(this.run).filter((m) => wouldFollow(m) && dist(m, p) <= 1).slice(0, 4);
+  }
+
+  /** Takes the stairs underfoot, asking first when something adjacent would come along. */
+  takeStairs() {
+    const f = this.followers();
+    if (!f.length) { this.doAct({ t: 'stairs' }); return; }
+    this.stopAuto();
+    const counts = new Map<string, number>();
+    for (const m of f) { const n = name(this.run, m); counts.set(n, (counts.get(n) ?? 0) + 1); }
+    const parts = [...counts].map(([n, c]) => c > 1 ? `${n} (×${c})` : n);
+    const who = parts.length > 1 ? parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1] : parts[0];
+    const p = openPanel(this.root, 'Not alone', `<p>${esc(who.charAt(0).toUpperCase() + who.slice(1))} will follow you. Take the stairs anyway?</p><div class="btnrow"><button class="btn primary" data-go>Go</button><button class="btn" data-close>Stay</button></div>`, { center: true });
+    p.body.querySelector('[data-go]')!.addEventListener('click', () => { p.close(); this.doAct({ t: 'stairs' }); });
   }
 
   toggleMinimap() {
@@ -365,6 +397,7 @@ export class GameUI {
 
   doAct(a: Action): boolean {
     if (this.run.over) return false;
+    this.preHp = this.run.player.hp;
     const ok = act(this.run, a);
     this.after();
     return ok;
@@ -384,7 +417,8 @@ export class GameUI {
     if (run.over) {
       this.stopAuto();
       saveRun(run);
-      setTimeout(() => this.onEnd(run), 900);
+      const hp = this.preHp;
+      setTimeout(() => this.onEnd(run, hp), 900);
       return;
     }
     if (popups.length) { this.stopAuto(); this.showPopups(); }
@@ -589,15 +623,19 @@ export class GameUI {
       return;
     }
     if (a.kind === 'travel' && !a.target && enemiesInView(run).length && a.steps > 0) { this.stopAuto(); return; }
-    const hpBefore = run.player.hp;
+    if (step.t === 'stairs' && this.followers().length) { this.stopAuto(); this.takeStairs(); return; }
+    const hpBefore = this.preHp = run.player.hp;
     const ok = act(run, step);
     a.steps++;
     if (a.kind === 'travel' && this.renderer.path.length) this.renderer.path.shift();
     const interrupted = a.target ? enemiesInView(run).some((m) => m !== a.target && !a.known!.has(m.id)) : view.interrupt;
-    if (!ok || interrupted || run.player.hp < hpBefore) { this.after(); this.stopAuto(); return; }
+    // resting through poison: the ticks alone do not stop it while nothing is in view and HP stays at 30% or more
+    const poisonRest = a.kind === 'rest' && !!run.player.statuses.poison && !view.interrupt && enemiesInView(run, true).length === 0 && run.player.hp >= playerStats(run).maxHp * 0.3;
+    if (!ok || interrupted || (run.player.hp < hpBefore && !poisonRest)) { this.after(); this.stopAuto(); return; }
     if (a.kind === 'stairs' && step.t === 'stairs') { this.after(); this.stopAuto(); return; }
     // gear is not auto-picked by the game; explore takes it with it (a full pack stops here with "Your pack is full.")
     if (a.kind === 'explore' && this.settings.autoPickupGear && this.unvisitedItemsHere()) {
+      this.preHp = run.player.hp;
       if (!act(run, { t: 'pickup' }) || view.interrupt || run.player.hp < hpBefore) { this.after(); this.stopAuto(); return; }
     }
     this.after();

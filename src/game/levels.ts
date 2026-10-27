@@ -2,7 +2,7 @@ import type { Feature, Level, Run } from '../core/types';
 import { dist, type Pos } from '../core/geom';
 import { MONSTERS, UNIQUES, type MonsterDef } from '../data/monsters';
 import { T, THEMES, themeForDepth, walkable, MAX_DEPTH } from '../data/terrain';
-import { FEELINGS, NOTES, SHOP_NAMES } from '../data/flavor';
+import { BAZAAR_SHOP_NAMES, FEELINGS, NOTES, SHOP_NAMES } from '../data/flavor';
 import { generateMap, type Room } from '../world/gen';
 import { distanceMap, UNREACHED } from '../world/path';
 import { rng } from './state';
@@ -65,6 +65,7 @@ export function createLevel(run: Run, depth: number): Level {
   let event: string | undefined;
   if (depth >= 2 && depth <= 5 && !run.flags.office && r.chance(0.3)) { theme = THEMES.office; event = 'office'; run.flags.office = true; }
   else if (depth >= 7 && depth <= 11 && !run.flags.crypt && r.chance(0.3)) { theme = THEMES.crypt; event = 'crypt'; run.flags.crypt = true; }
+  else if (depth >= 5 && depth <= 11 && !run.flags.bazaar && r.chance(0.2)) { event = 'bazaar'; run.flags.bazaar = true; }
   const style = depth === MAX_DEPTH ? 'halls' : undefined;
   const g = generateMap(r, depth, theme, { style });
   const l: Level = {
@@ -146,6 +147,14 @@ function populate(run: Run, l: Level, rooms: Room[]) {
   if (l.event === 'crypt') {
     for (let i = 0; i < 6; i++) { const at = take(spots); if (at) spawnMonster(run, l, r.pick(['skeletal_warrior', 'wight', 'necrophage', 'laughing_skull', 'weeping_skull']), at.x, at.y); }
   }
+  if (l.event === 'bazaar') {
+    const kinds: string[] = [];
+    const names = r.shuffle([...BAZAAR_SHOP_NAMES, r.pick(SHOP_NAMES)]);
+    for (let i = 0; i < 3; i++) { const k = placeShop(run, l, take(spots), kinds, names[i]); if (k) kinds.push(k); }
+    const at = take(spots);
+    if (at) l.items.push({ x: at.x, y: at.y, item: makeItem(run, 'gold', { qty: r.int(30, 60) }) });
+    l.feeling = 'You hear haggling. Several voices, all of them lying.';
+  }
   // unique
   for (const [id, d] of Object.entries(run.uniques)) {
     if (d !== depth) continue;
@@ -173,7 +182,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     run.flags.ghosts = JSON.stringify(ghosts.filter((g) => g !== ghost));
   }
   // your shadow
-  if (depth >= 8 && depth <= 11 && !run.flags.shadow && r.chance(0.35)) {
+  if (depth >= 8 && depth <= 11 && !run.flags.shadow && l.event !== 'bazaar' && r.chance(0.35)) {
     run.flags.shadow = true;
     const at = take(spots);
     const m = at && spawnMonster(run, l, 'shadow_twin', at.x, at.y, { awake: false });
@@ -256,7 +265,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     const traps = ['dart', 'net', 'teleport', 'alarm', 'pie', 'shaft', 'fire'].filter((t) => t !== 'shaft' || depth < MAX_DEPTH - 1);
     for (let i = 0; i < nTraps; i++) { const at = take(spots); if (at) l.features.push({ kind: 'trap', x: at.x, y: at.y, id: r.pick(traps), hidden: true }); }
   }
-  if (depth >= 2 && r.chance(0.35)) placeShop(run, l, take(spots));
+  if (depth >= 2 && l.event !== 'bazaar' && r.chance(0.35)) placeShop(run, l, take(spots));
   if (depth >= 3 && r.chance(0.3)) {
     const at = take(spots);
     if (at) {
@@ -307,10 +316,10 @@ function placeNear(run: Run, l: Level, at: Pos, id: string, awake: boolean) {
   }
 }
 
-function placeShop(run: Run, l: Level, at: Pos | null) {
+function placeShop(run: Run, l: Level, at: Pos | null, not: string[] = [], shopName?: string): string | undefined {
   if (!at) return;
   const r = rng(run);
-  const kind = r.pick(['general', 'weapon', 'armour', 'potions', 'scrolls', 'jewellery', 'wands']);
+  const kind = r.pick(['general', 'weapon', 'armour', 'potions', 'scrolls', 'jewellery', 'wands'].filter((k) => !not.includes(k)));
   const cat = ({ weapon: 'weapon', armour: 'armour', potions: 'potion', scrolls: 'scroll', jewellery: 'jewel', wands: 'wand' } as const)[kind as 'weapon'];
   const stock: Feature['stock'] = [];
   for (let i = 0; i < r.int(4, 7); i++) {
@@ -320,5 +329,6 @@ function placeShop(run: Run, l: Level, at: Pos | null) {
     stock.push({ item: it, price: Math.round(itemPrice(run, it) * r.int(90, 130) / 100 * (run.flags.omen === 'gold_rush' ? 1.5 : 1)) });
   }
   l.tiles[at.y * l.w + at.x] = T.SHOP;
-  l.features.push({ kind: 'shop', x: at.x, y: at.y, id: kind, stock, data: { name: r.pick(SHOP_NAMES) } });
+  l.features.push({ kind: 'shop', x: at.x, y: at.y, id: kind, stock, data: { name: shopName ?? r.pick(SHOP_NAMES) } });
+  return kind;
 }

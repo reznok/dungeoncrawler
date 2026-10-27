@@ -526,13 +526,22 @@ function useStairs(run: Run): boolean {
   return false;
 }
 
+/** Would this monster follow the player onto the stairs if it stood next to them? (The UI asks the same question.) */
+export function wouldFollow(m: Monster): boolean {
+  const f = monDef(m).flags ?? [];
+  return m.awake && !m.ally && !m.friendly && !m.statuses.afraid && !m.statuses.asleep && !m.statuses.paralysed && !f.includes('stationary') && !f.includes('aquatic') && m.def !== 'mother';
+}
+
 export function changeLevel(run: Run, depth: number, fell: boolean) {
   const p = run.player;
   const old = cur(run);
   const goingDown = depth > run.depth;
   // adjacent allies follow
   const followers = old.monsters.filter((m) => m.ally && dist(m, p) <= 2);
-  old.monsters = old.monsters.filter((m) => !followers.includes(m));
+  // hostiles standing next to you come along (nearest first, at most 4)
+  const chasers = fell ? [] : old.monsters.filter((m) => m.hp > 0 && wouldFollow(m) && dist(m, p) <= 1).sort((a, b) => dist(a, p) - dist(b, p)).slice(0, 4);
+  const seenChasers = new Set(chasers.filter((m) => isVisible(run, m.x, m.y) && (!m.statuses.invisible || playerStats(run).flags.has('see_invis'))));
+  old.monsters = old.monsters.filter((m) => !followers.includes(m) && !chasers.includes(m));
   if (!run.levels[depth]) run.levels[depth] = createLevel(run, depth);
   run.depth = depth;
   const l = cur(run);
@@ -548,6 +557,14 @@ export function changeLevel(run: Run, depth: number, fell: boolean) {
     const s2 = nearestFree(run, l, p, (x, y) => walkable(l.tiles[y * l.w + x]), 3);
     if (s2) { m.x = s2.x; m.y = s2.y; l.monsters.push(m); }
   }
+  const arrived: Monster[] = [];
+  for (const m of chasers) {
+    const s2 = nearestFree(run, l, p, (x, y) => canMonsterEnter(run, m, x, y), 3);
+    if (!s2) { old.monsters.push(m); continue; }
+    m.x = s2.x; m.y = s2.y; m.awake = true; m.lastSeen = { x: p.x, y: p.y }; m.energy = 0; m.wander = undefined;
+    l.monsters.push(m);
+    arrived.push(m);
+  }
   run.stats.deepest = Math.max(run.stats.deepest, depth);
   if (p.piety?.god === 'speed') {
     if (!goingDown && !fell) gainFavor(run, -30, 'The Speedrunner screams: "NO BACKTRACKING! RESET! RESET!"');
@@ -562,6 +579,7 @@ export function changeLevel(run: Run, depth: number, fell: boolean) {
   } else {
     msg(run, `You return to depth ${depth}.`, 'dim');
   }
+  for (const m of arrived) if (seenChasers.has(m)) msg(run, `${Name(run, m)} follows you ${goingDown ? 'down' : 'up'} the stairs!`, 'warn');
   view.interrupt = true;
   p.energy = Math.max(p.energy, 100);
   updateFov(run);

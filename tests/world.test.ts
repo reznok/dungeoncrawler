@@ -75,6 +75,48 @@ describe('data integrity', () => {
   });
 });
 
+describe('rules', () => {
+  it('an adjacent awake monster follows you down the stairs', async () => {
+    const { act } = await import('../src/game/turn');
+    const { spawnMonster } = await import('../src/game/monsters');
+    const { nearestFree } = await import('../src/game/state');
+    const run = newRun(11, 'Stairs', 'human', 'sellsword');
+    const l = run.levels[1];
+    run.player.x = l.down[0].x; run.player.y = l.down[0].y;
+    const at = nearestFree(run, l, l.down[0], (x, y) => walkable(l.tiles[y * l.w + x]) && (x !== l.down[0].x || y !== l.down[0].y), 1)!;
+    const j = spawnMonster(run, l, 'jackal', at.x, at.y, { awake: true })!;
+    expect(act(run, { t: 'stairs' })).toBe(true);
+    expect(run.depth).toBe(2);
+    expect(run.levels[2].monsters).toContain(j);
+    expect(run.levels[1].monsters).not.toContain(j);
+    expect(Math.max(Math.abs(j.x - run.player.x), Math.abs(j.y - run.player.y))).toBeLessThanOrEqual(3);
+  });
+
+  it('ranged monsters keep their distance, bosses and brutes do not', async () => {
+    const { isSkirmisher } = await import('../src/game/monsters');
+    expect(isSkirmisher(MONSTERS.goblin)).toBe(true);
+    expect(isSkirmisher(MONSTERS.salamander_mystic)).toBe(true);
+    expect(isSkirmisher(MONSTERS.rat)).toBe(false);
+    expect(isSkirmisher(MONSTERS.baker)).toBe(false);
+    expect(isSkirmisher(MONSTERS.acid_blob)).toBe(false);
+  });
+
+  it('a bazaar has three different shops', () => {
+    let found = 0;
+    for (let seed = 1; seed <= 60 && found < 3; seed++) {
+      const run = newRun(seed, 'B', 'human', 'sellsword');
+      const l = createLevel(run, 7);
+      if (l.event !== 'bazaar') continue;
+      found++;
+      const shops = l.features.filter((f) => f.kind === 'shop');
+      expect(shops.length).toBe(3);
+      expect(new Set(shops.map((f) => f.id)).size).toBe(3);
+      expect(l.feeling).toMatch(/haggling/);
+    }
+    expect(found).toBeGreaterThan(0);
+  });
+});
+
 describe('saves', () => {
   it('round-trips a run through JSON and keeps playing', async () => {
     const { act } = await import('../src/game/turn');

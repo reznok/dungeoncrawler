@@ -101,6 +101,7 @@ function applyHex(run: Run, a: AbilityDef, caster: ActorBase, t: ActorBase, powe
     const save = Math.min(0.7, 0.12 + s.wits * 0.015 + run.player.level * 0.01);
     if (!rider && r.chance(save)) { msg(run, `You resist.`, 'good'); return false; }
     if (a.status === 'poison' && s.res.poison > 0) return false;
+    if (a.status === 'paralysed') turns = Math.min(turns, 2);
   } else {
     const m = t as Monster;
     const def = monDef(m);

@@ -167,6 +167,9 @@ button { font: inherit; color: inherit; }
 .story { font-size: 16px; line-height: 1.5; color: var(--story); font-style: italic; }
 .end-title { font-family: var(--pixel); font-size: 44px; text-align: center; margin: 10px 0; }
 .end-title.dead { color: var(--bad); } .end-title.won { color: var(--gold); }
+.end-why { color: var(--dim); font-size: 14px; max-width: 360px; }
+.end-why b { color: var(--text); font-weight: 600; }
+.end-log { max-height: 40vh; overflow-y: auto; font-size: 13px; }
 .hall-row { font-size: 13px; padding: 6px 0; border-bottom: 1px dotted var(--line); color: var(--dim); }
 .hall-row b { color: var(--text); }
 .toast { position: absolute; left: 50%; top: 30%; transform: translateX(-50%); background: #000d; border: 1px solid var(--gold); color: var(--gold); padding: 10px 16px; border-radius: 12px; font-family: var(--pixel); font-size: 18px; z-index: 30; pointer-events: none; animation: fade .2s; text-align: center; }
