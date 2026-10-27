@@ -61,6 +61,8 @@ export interface Monster extends ActorBase {
   carried?: Item[]; // stolen goods, dropped on death
   returned?: boolean;
   friendly?: boolean; // neutral NPC: never attacks, never attacked by allies
+  tile?: string; // tile override
+  bonus?: number; // extra melee damage (scaled monsters: ghosts, shadows, mimics)
   talked?: boolean;
 }
 
@@ -75,7 +77,7 @@ export interface Item {
   qty: number;
   ench?: number;
   ego?: string;
-  art?: { name: string; props: ArtProp[]; tile?: string };
+  art?: { name: string; props: ArtProp[]; tile?: string; desc?: string; unrand?: string };
   charges?: number;
   cursed?: boolean;
   known?: boolean; // enchant/ego/artifact props revealed
@@ -85,7 +87,7 @@ export interface Item {
 
 export interface FloorItem { x: number; y: number; item: Item; seen?: boolean }
 
-export type FeatureKind = 'trap' | 'shop' | 'shrine' | 'fountain' | 'note' | 'npc' | 'event';
+export type FeatureKind = 'trap' | 'shop' | 'shrine' | 'fountain' | 'note' | 'npc' | 'event' | 'chest';
 export interface Feature {
   kind: FeatureKind;
   x: number; y: number;

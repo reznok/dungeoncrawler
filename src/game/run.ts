@@ -6,7 +6,7 @@ import { MONSTERS } from '../data/monsters';
 import { cur, msg, setMonsterNamer, view } from './state';
 import { addToInventory, isEquipment, learn, makeItem, rollAppearances } from './items';
 import { playerStats } from './stats';
-import { createLevel, planUniques } from './levels';
+import { createLevel, planUniques, type GhostInfo } from './levels';
 import { updateFov } from './fov';
 import { autoQuickSlot, playerAbilities } from './progression';
 
@@ -14,7 +14,7 @@ setMonsterNamer((m) => MONSTERS[m.def]?.name ?? m.def);
 
 export const SAVE_VERSION = 1;
 
-export function newRun(seed: number, name: string, ancestryId: string, callingId: string): Run {
+export function newRun(seed: number, name: string, ancestryId: string, callingId: string, ghosts: GhostInfo[] = []): Run {
   const anc = ANCESTRIES.find((a) => a.id === ancestryId)!;
   const cal = CALLINGS.find((c) => c.id === callingId)!;
   const r = new Rng(seed);
@@ -59,6 +59,7 @@ export function newRun(seed: number, name: string, ancestryId: string, callingId
   // everyone starts knowing curing
   learn(run, 'p_curing');
   planUniques(run);
+  run.flags.ghosts = JSON.stringify(ghosts.filter((g) => g.depth > 1 && g.depth < 15).slice(0, 8));
   run.levels[1] = createLevel(run, 1);
   const l = cur(run);
   l.visited = true;

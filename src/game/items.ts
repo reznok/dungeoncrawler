@@ -6,6 +6,7 @@ import {
 } from '../data/items';
 import { ART_ADJ, ART_NOUN, ART_TITLES, NOTES } from '../data/flavor';
 import { DISCIPLINES } from '../data/talents';
+import { UNRANDS } from '../data/unrands';
 import { newId, rng } from './state';
 
 export function kindOf(base: string): ItemKind {
@@ -241,6 +242,18 @@ const ART_BAD: { make: (r: Rng) => { mod: Mods; text: string } }[] = [
 
 export function makeArtifact(run: Run, it: Item, lvl: number): Item {
   const r = rng(run);
+  const used = String(run.flags.unrands ?? '').split(',');
+  const fixed = UNRANDS.filter((u) => !used.includes(u.id) && u.minDepth <= lvl && kindOf(u.base) === it.kind);
+  if (fixed.length && r.chance(0.3)) {
+    const u = r.pick(fixed);
+    run.flags.unrands = [...used.filter(Boolean), u.id].join(',');
+    it.base = u.base;
+    it.art = { name: u.name, props: u.props, desc: u.desc, unrand: u.id };
+    it.ench = u.ench ?? it.ench ?? 0;
+    it.ego = u.ego;
+    it.cursed = false;
+    return it;
+  }
   const props = [];
   const n = r.int(2, lvl > 8 ? 4 : 3);
   const chosen = new Set<number>();

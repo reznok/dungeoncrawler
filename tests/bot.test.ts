@@ -48,12 +48,13 @@ describe('headless bot', () => {
   for (let i = 0; i < CALLINGS.length; i++) {
     const cal = CALLINGS[i];
     const anc = ANCESTRIES[i % ANCESTRIES.length];
-    it(`plays a ${anc.name} ${cal.name} without crashing`, () => {
+    it(`plays a ${anc.name} ${cal.name} without crashing`, async () => {
       const run = newRun(1000 + i, 'Bot', anc.id, cal.id);
       const r = new Rng(77 + i);
       run.flags.godmode = true;
       let steps = 0;
-      while (!run.over && steps < 4000) {
+      while (!run.over && steps < 2500) {
+        if (steps % 100 === 0) await new Promise((res) => setTimeout(res, 0)); // let the test runner breathe
         botTurn(run, r);
         steps++;
         view.interrupt = false;

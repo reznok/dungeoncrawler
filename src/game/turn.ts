@@ -324,8 +324,13 @@ export function act(run: Run, a: Action): boolean {
       if (a.choice === 'gift') {
         msg(run, '"Here. Take these. My wife made them, before." He presses two warm flasks into your hands, and a folded note.', 'story');
         addToInventory(run, makeItem(run, 'p_heal', { qty: 2 }));
-        addToInventory(run, makeItem(run, 'p_experience'));
-        learn(run, 'p_heal'); learn(run, 'p_experience');
+        learn(run, 'p_heal');
+        const pin = makeItem(run, 'rolling_pin', { known: true });
+        pin.art = { name: "Barnaby's Rolling Pin", desc: 'Worn smooth by thirty years of kneading. It remembers the shape of every loaf, and one particular hand that held it alongside his.', props: [{ mod: { dmg: 3 }, text: '+3 damage' }, { mod: { maxHp: 10 }, text: '+10 max HP' }, { mod: { regen: 2 }, text: '+2 regeneration' }], unrand: 'barnaby' };
+        pin.ench = 4;
+        run.flags.unrands = [String(run.flags.unrands ?? ''), 'barnaby'].filter(Boolean).join(',');
+        if (!addToInventory(run, pin)) cur(run).items.push({ x: p.x, y: p.y, item: pin, seen: true });
+        msg(run, '"And this. My rolling pin. Hettie gave it to me on our wedding day. I won\'t be needing it where I\'m going."', 'story');
         msg(run, '"I have to go down. She is waiting. Don\'t follow me." He walks away into the dark.', 'story');
         l.monsters = l.monsters.filter((m) => m !== baker);
       } else {
@@ -387,11 +392,35 @@ function arrive(run: Run) {
     else if (f.kind === 'shop') { popups.push({ type: 'shop' }); }
     else if (f.kind === 'shrine' && !f.used) popups.push({ type: 'shrine', id: f.id });
     else if (f.kind === 'note' && !f.used) { f.used = true; popups.push({ type: 'note', title: 'A notice on the wall', text: String(f.data?.text ?? '') }); }
+    else if (f.kind === 'chest' && !f.used) openChest(run, f);
   }
   const t = tileAt(l, p.x, p.y);
   if (t === T.DOWN) msg(run, 'There are stairs down here.', 'dim');
   if (t === T.UP) msg(run, 'There are stairs up here.', 'dim');
   if (t === T.SHALLOW && r.chance(0.05)) msg(run, 'Your boots squelch.', 'dim');
+}
+
+function openChest(run: Run, f: { id: string; x: number; y: number; used?: boolean }) {
+  const r = rng(run);
+  const l = cur(run);
+  f.used = true;
+  view.interrupt = true;
+  if (f.id === 'mimic') {
+    const m = spawnMonster(run, l, 'mimic', f.x, f.y, { awake: true });
+    if (m) {
+      const spot = nearestFree(run, l, f, (x, y) => walkable(l.tiles[y * l.w + x]), 2);
+      if (spot) { m.x = spot.x; m.y = spot.y; }
+      m.maxHp = m.hp = 20 + run.depth * 9;
+      m.bonus = Math.floor(run.depth / 2);
+      (m.carried ??= []).push(randomItem(run, run.depth + 3, { good: true }));
+    }
+    msg(run, r.pick(['You open the box. The box opens YOU. It\'s a mimic!', 'The box has teeth. Lots of teeth. MIMIC!', 'You reach for the lid and the lid reaches back. Mimic!']), 'bad');
+    pushFx({ kind: 'shake' });
+    return;
+  }
+  const n = r.int(2, 3);
+  for (let i = 0; i < n; i++) l.items.push({ x: f.x, y: f.y, item: r.chance(0.3) ? makeItem(run, 'gold', { qty: r.int(10, 20 + run.depth * 8) }) : randomItem(run, run.depth + 2, { good: r.chance(0.35) }), seen: true });
+  msg(run, r.pick(['You open the box. Loot! Glorious loot!', 'The box creaks open. Treasure!', 'You open the box. It was just a box. A box full of stuff!']), 'good');
 }
 
 function triggerTrap(run: Run, f: { id: string; hidden?: boolean; x: number; y: number }) {

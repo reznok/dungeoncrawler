@@ -44,6 +44,7 @@ function itemInfo(ui: GameUI, it: Item): string {
   } else if (it.kind === 'essence') lines.push(`<p>The distilled essence of a ${esc(it.family ?? '')} creature. Absorb it to gain a ${esc(it.family ?? '')} mutation (up to ${MUTATION_SLOTS}; more will replace an old one).</p>`);
   else if (it.kind === 'tome') lines.push(`<p>A tome of ${esc(DISCIPLINES[it.base.slice(5)]?.name ?? '')}. ${esc(DISCIPLINES[it.base.slice(5)]?.desc ?? '')} Reading it lets you learn from this discipline.</p>`);
   else if (it.kind === 'note') lines.push('<p>Something written by someone who was here before you.</p>');
+  if (it.art?.desc && it.known) lines.unshift(`<p class="story">${esc(it.art.desc)}</p>`);
   if (it.art && it.known) lines.push(`<p class="props">${it.art.props.map((p) => esc(p.text)).join(' · ')}</p>`);
   if (it.cursed && it.known) lines.push('<p class="m-bad">Cursed: once worn, it will not come off.</p>');
   if (!it.known && isEquipment(it) && (it.kind === 'weapon' || it.kind === 'armour')) lines.push('<p class="m-dim">Its enchantment is unknown until you use it.</p>');
@@ -305,11 +306,12 @@ export function examine(ui: GameUI, cell: Pos) {
     const hpTxt = m.hp >= m.maxHp ? 'unhurt' : m.hp > m.maxHp * 0.6 ? 'lightly wounded' : m.hp > m.maxHp * 0.3 ? 'badly wounded' : 'almost dead';
     const sts = Object.keys(m.statuses).filter((k) => STATUSES[k] && k !== 'invisible').map((k) => STATUSES[k].name.toLowerCase());
     const color = { trivial: 'var(--dim)', easy: 'var(--good)', tough: 'var(--warn)', nasty: 'var(--bad)' }[th];
-    parts.push(`<div class="detail"><div style="display:flex;gap:10px;align-items:center">${icon(d.tile, 56, m.id)}<div><b style="font-size:18px">${esc(m.name ?? d.name)}</b><div class="sub" style="color:${color}">${m.ally ? 'Your ally' : m.friendly ? 'Not hostile' : th === 'nasty' ? 'Extremely dangerous' : th === 'tough' ? 'Dangerous' : th === 'easy' ? 'Manageable' : 'Harmless'} · ${hpTxt}${m.awake ? '' : ' · unaware'}${sts.length ? ' · ' + sts.join(', ') : ''}</div></div></div><p>${esc(d.desc)}</p></div>`);
+    parts.push(`<div class="detail"><div style="display:flex;gap:10px;align-items:center">${icon(m.tile ?? d.tile, 56, m.id)}<div><b style="font-size:18px">${esc(m.name ?? d.name)}</b><div class="sub" style="color:${color}">${m.ally ? 'Your ally' : m.friendly ? 'Not hostile' : th === 'nasty' ? 'Extremely dangerous' : th === 'tough' ? 'Dangerous' : th === 'easy' ? 'Manageable' : 'Harmless'} · ${hpTxt}${m.awake ? '' : ' · unaware'}${sts.length ? ' · ' + sts.join(', ') : ''}</div></div></div><p>${esc(d.desc)}</p></div>`);
   }
   for (const fi of l.items.filter((o) => o.x === cell.x && o.y === cell.y)) parts.push(`<div class="item" style="cursor:default">${icon(itemTile(run, fi.item), 32, fi.item.id)}<div class="nm">${esc(itemName(run, fi.item))}</div></div>`);
   const f = l.features.find((o) => o.x === cell.x && o.y === cell.y && !(o.kind === 'trap' && o.hidden));
   if (f?.kind === 'trap') parts.push(`<p class="m-warn">A ${esc(f.id)} trap.</p>`);
+  if (f?.kind === 'chest' && !f.used) parts.push('<p>A sturdy box. Probably full of treasure. Probably.</p>');
   if (f?.kind === 'shop') parts.push(`<p>${esc(String(f.data?.name ?? 'A shop'))}.</p>`);
   if (f?.kind === 'shrine') parts.push(`<p><b>${esc(SHRINES[f.id].name)}</b>. ${esc(SHRINES[f.id].desc)}${f.used ? ' It is quiet now.' : ''}</p>`);
   const t = l.tiles[i];

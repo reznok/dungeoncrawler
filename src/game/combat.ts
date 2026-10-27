@@ -86,10 +86,38 @@ export function damage(run: Run, t: ActorBase, amount: number, el: Element, opts
     if (opts.source && isPlayer(opts.source)) run.stats.damageDealt += dmg;
     m.awake = true;
     if (m.statuses.asleep) delete m.statuses.asleep;
+    if (m.def === 'mother' && m.hp > 0) motherPhase(run, m);
     if (m.hp <= 0) monsterDies(run, m, opts.source ?? null);
     else if (!opts.noSplit && monDef(m).flags?.includes('splits') && dmg >= 4 && (m.split ?? 0) < 3) split(run, m);
   }
   return dmg;
+}
+
+function motherPhase(run: Run, m: Monster) {
+  const phase = Number(run.flags.motherPhase ?? 0);
+  const frac = m.hp / m.maxHp;
+  const l = cur(run);
+  const spawn = (n: number) => {
+    for (let i = 0; i < n; i++) {
+      const spot = nearestFree(run, l, m, (x, y) => walkable(l.tiles[y * l.w + x]), 3);
+      if (!spot) break;
+      const s = { id: run.nextId++, def: 'starter_spawn', x: spot.x, y: spot.y, hp: 30, maxHp: 30, energy: 0, statuses: {}, awake: true, cooldowns: {} } as Monster;
+      l.monsters.push(s);
+    }
+  };
+  if (phase < 1 && frac < 0.66) {
+    run.flags.motherPhase = 1;
+    msg(run, 'Mother shudders. Lumps of her break away and crawl toward you.', 'bad');
+    msg(run, 'Mother: "Why are you hurting me? I only ever fed you."', 'speech');
+    spawn(4);
+  } else if (phase < 2 && frac < 0.33) {
+    run.flags.motherPhase = 2;
+    msg(run, 'Mother RISES. She fills half the chamber. The air is thick with yeast.', 'bad');
+    msg(run, `Mother speaks in your grandmother's voice: "${run.player.name}. Come home. Come home and be bread."`, 'speech');
+    addStatus(run, m, 'risen', 60, 8);
+    addStatus(run, m, 'haste', 10);
+    spawn(5);
+  }
 }
 
 function split(run: Run, m: Monster) {
@@ -298,7 +326,7 @@ export function monsterAttack(run: Run, m: Monster, t: Player | Monster) {
       return;
     }
     if (s.block && r.chance(s.block / 100)) { msg(run, `You block ${name(run, m)}'s attack.`, 'dim'); return; }
-    let dmg = r.roll(def.dmg[0], def.dmg[1]);
+    let dmg = r.roll(def.dmg[0], def.dmg[1]) + (m.bonus ?? 0);
     if (m.statuses.weak) dmg *= 0.7;
     if (m.statuses.risen) dmg += m.statuses.risen.power ?? 4;
     if (m.statuses.berserk) dmg *= 1.5;

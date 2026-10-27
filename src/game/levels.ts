@@ -18,6 +18,15 @@ export const SHRINES: Record<string, { name: string; tile: string; desc: string;
   mirror: { name: 'Mirror of Second Chances', tile: 'dngn/altars/ecumenical', desc: 'You see yourself, but different.', offer: 'Forget all your talents, and choose them again.' },
 };
 
+export const SHADOW_TILES: Record<string, string> = {
+  human: 'mon/nonliving/shadows/shadow_human', dwarf: 'mon/nonliving/shadows/shadow_dwarf', elf: 'mon/nonliving/shadows/shadow_elf',
+  gnoll: 'mon/nonliving/shadows/shadow_gnoll', kobold: 'mon/nonliving/shadows/shadow_kobold', frog: 'mon/nonliving/shadows/shadow_barachi',
+  troll: 'mon/nonliving/shadows/shadow_troll', spriggan: 'mon/nonliving/shadows/shadow_spriggan', ghoul: 'mon/nonliving/shadows/shadow_revenant',
+  mummy: 'mon/nonliving/shadows/shadow_mummy', octopode: 'mon/nonliving/shadows/shadow_octopode', gargoyle: 'mon/nonliving/shadows/shadow_gargoyle',
+};
+
+export interface GhostInfo { name: string; title: string; level: number; depth: number }
+
 /** Run-start setup: which uniques appear on which floors. */
 export function planUniques(run: Run) {
   const r = rng(run);
@@ -118,10 +127,45 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     if (d !== depth) continue;
     const at = take(spots);
     if (!at) continue;
-    const m = spawnMonster(run, l, id, at.x, at.y, { awake: r.chance(0.5) });
+    const hunting = r.chance(0.3);
+    const m = spawnMonster(run, l, id, at.x, at.y, { awake: hunting || r.chance(0.4) });
+    if (m && hunting) m.lastSeen = { ...l.up[0] };
     const def = MONSTERS[id];
     if (m && def.followers) for (let k = 0; k < r.int(def.followers.n[0], def.followers.n[1]); k++) placeNear(run, l, at, def.followers.id, m.awake);
     if (feeling === 'normal') feeling = 'unique';
+  }
+  // ghosts of previous characters who died at this depth
+  const ghosts: GhostInfo[] = JSON.parse(String(run.flags.ghosts ?? '[]'));
+  const ghost = ghosts.find((g) => g.depth === depth);
+  if (ghost && r.chance(0.6)) {
+    const at = take(spots);
+    const m = at && spawnMonster(run, l, 'player_ghost', at.x, at.y, { awake: false });
+    if (m) {
+      m.name = `the ghost of ${ghost.name} ${ghost.title}`;
+      m.maxHp = m.hp = 12 + ghost.level * 7;
+      m.bonus = Math.floor(ghost.level / 2);
+      feeling = 'unique';
+    }
+    run.flags.ghosts = JSON.stringify(ghosts.filter((g) => g !== ghost));
+  }
+  // your shadow
+  if (depth >= 8 && depth <= 11 && !run.flags.shadow && r.chance(0.35)) {
+    run.flags.shadow = true;
+    const at = take(spots);
+    const m = at && spawnMonster(run, l, 'shadow_twin', at.x, at.y, { awake: false });
+    if (m) {
+      const p = run.player;
+      m.maxHp = m.hp = 20 + p.level * 8;
+      m.bonus = Math.floor(p.level / 2);
+      m.name = `${p.name}'s shadow`;
+      m.tile = SHADOW_TILES[p.ancestry] ?? SHADOW_TILES.human;
+      l.feeling = 'You catch a glimpse of yourself in the dark. You were not holding a mirror.';
+    }
+  }
+  // treasure box (sometimes it bites)
+  if (depth >= 2 && r.chance(0.4)) {
+    const at = take(spots);
+    if (at) l.features.push({ kind: 'chest', x: at.x, y: at.y, id: r.chance(0.3) ? 'mimic' : 'loot' });
   }
   // story: the Baker
   if (depth === 6 && !run.flags.bakerMet) {
@@ -188,7 +232,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     const at = take(spots);
     if (at) { l.tiles[at.y * l.w + at.x] = T.FOUNTAIN; l.features.push({ kind: 'fountain', x: at.x, y: at.y, id: 'fountain' }); }
   }
-  l.feeling = r.pick(FEELINGS[feeling]);
+  l.feeling = l.feeling ?? r.pick(FEELINGS[feeling]);
 }
 
 function populateFinal(run: Run, l: Level, spots: Pos[], take: (s: Pos[]) => Pos | null) {

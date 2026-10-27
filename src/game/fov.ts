@@ -1,10 +1,10 @@
 import type { Pos } from '../core/geom';
 import type { Run } from '../core/types';
 import { computeFov } from '../world/fov';
-import { blocksSight, cur, view } from './state';
+import { blocksSight, cur, msg, view } from './state';
 import { playerStats } from './stats';
 import { THEMES } from '../data/terrain';
-import { monDef } from './combat';
+import { monDef, threat } from './combat';
 
 export function updateFov(run: Run) {
   const l = cur(run);
@@ -22,7 +22,13 @@ export function updateFov(run: Run) {
     if (!view.visible.has(m.y * l.w + m.x)) continue;
     if (m.statuses.invisible && !s.flags.has('see_invis')) continue;
     if (!before.has(m.id)) view.newlySeen.push(m);
-    if (!m.noticed) { m.noticed = true; }
+    if (!m.noticed) {
+      m.noticed = true;
+      const def = monDef(m);
+      const th = threat(run, m);
+      if (def.unique) msg(run, `${m.name ?? def.name} is here!`, 'warn');
+      else msg(run, `${/^[aeiou]/i.test(def.name) ? 'An' : 'A'} ${def.name} comes into view${th === 'nasty' ? '. It looks extremely dangerous' : th === 'tough' ? '. It looks dangerous' : ''}.`, th === 'nasty' || th === 'tough' ? 'warn' : 'dim');
+    }
   }
   if (view.newlySeen.length) view.interrupt = true;
   for (const it of l.items) if (view.visible.has(it.y * l.w + it.x)) it.seen = true;

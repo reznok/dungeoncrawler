@@ -17,7 +17,7 @@ if (!root || !fs.existsSync(root)) {
 }
 const projectRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/(\w:)/, '$1')), '..');
 const srcDir = path.join(projectRoot, 'src');
-const KEY_RE = /['"`]((?:dngn|mon|item|player|effect|misc|gui)\/[A-Za-z0-9_\-/]+\*{0,2})['"`]/g;
+const KEY_RE = /['"`]((?:dngn|mon|item|player|effect|misc|gui|UNUSED)\/[A-Za-z0-9_\-/]+\*{0,2})['"`]/g;
 
 function walk(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

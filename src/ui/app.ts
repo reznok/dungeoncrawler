@@ -87,7 +87,8 @@ export class App {
       if (t.closest('[data-back]')) this.title();
       if (t.closest('[data-go]')) {
         const seed = (Math.random() * 2 ** 31) >>> 0;
-        const run = newRun(seed, (name || 'Nobody').trim().slice(0, 20), anc, cal);
+        const ghosts = hallOfFame().filter((h) => h.result === 'dead').map((h) => ({ name: h.name, title: `the ${h.ancestry} ${h.calling}`, level: h.level, depth: h.depth }));
+        const run = newRun(seed, (name || 'Nobody').trim().slice(0, 20), anc, cal, ghosts);
         saveRun(run);
         this.play(run);
       }
@@ -118,6 +119,7 @@ export class App {
         ${run.stats.potions} potions drunk · ${run.stats.scrolls} scrolls read<br>
         ${run.stats.uniques.length ? `Slew: ${run.stats.uniques.map(esc).join(', ')}` : 'No notable kills.'}
       </div>
+      <div class="info" style="max-width:360px;width:100%;text-align:left;font-size:13px">${run.messages.slice(-6).map((m) => `<div class="${m.cls ? 'm-' + m.cls : ''}">${esc(m.text)}</div>`).join('')}</div>
       <div class="m-dim" style="font-family:var(--pixel)">${esc(quip)}</div>
       <div class="menu-col"><button class="btn primary" data-t="new">Try again</button><button class="btn" data-t="title">Title</button></div>
     </div>`;

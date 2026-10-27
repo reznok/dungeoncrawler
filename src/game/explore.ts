@@ -52,6 +52,7 @@ export function exploreStep(run: Run): Action | string {
     const v = fi as { visited?: boolean } & typeof fi;
     if (fi.seen && !v.visited && !(fi.x === p.x && fi.y === p.y)) targets.push({ x: fi.x, y: fi.y });
   }
+  for (const f of l.features) if (f.kind === 'chest' && !f.used && l.seen[f.y * l.w + f.x] && !(f.x === p.x && f.y === p.y)) targets.push({ x: f.x, y: f.y });
   for (const fi of l.items) if (fi.x === p.x && fi.y === p.y) (fi as { visited?: boolean }).visited = true;
   if (!targets.length) return 'Done exploring. Tap the stairs button to head down.';
   const d = distanceMap(l.w, l.h, targets, (x, y) => knownPassable(run, x, y) || (x === p.x && y === p.y));

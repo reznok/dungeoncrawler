@@ -132,7 +132,7 @@ export class Renderer {
         if (t === T.DOWN && run.depth === 14) key = 'dngn/gateways/enter_zot_open';
         if (key) drawTile(ctx, key, h, dx, dy, ts);
         if (f && f.kind === 'trap' && !f.hidden) drawTile(ctx, TRAP_TILES[f.id] ?? 'dngn/traps/pressure_plate', 0, dx, dy, ts);
-        if (f && f.kind === 'note') drawTile(ctx, 'dngn/statues/statue_tengu', 0, dx, dy, ts, 0);
+        if (f && f.kind === 'chest' && !f.used) drawTile(ctx, 'item/misc/misc_box_of_beasts', 0, dx, dy, ts);
       }
     }
     // items
@@ -185,7 +185,7 @@ export class Renderer {
     if (m.ally) drawTile(ctx, 'misc/halo_friendly', 0, dx, dy, ts);
     if (m.friendly) drawTile(ctx, 'misc/halo_neutral', 0, dx, dy, ts);
     const ghost = m.statuses.invisible ? 0.45 : 1;
-    drawTile(ctx, def.tile, m.id, dx, dy, ts, ghost);
+    drawTile(ctx, m.tile ?? def.tile, m.id, dx, dy, ts, ghost);
     // health bar
     if (m.hp < m.maxHp) {
       const f = Math.max(0, m.hp / m.maxHp);
