@@ -34,7 +34,8 @@ export type Action =
   | { t: 'shrine' }
   | { t: 'fountain'; at: Pos }
   | { t: 'talk'; choice: 'gift' | 'attack' }
-  | { t: 'worship'; id: string };
+  | { t: 'worship'; id: string }
+  | { t: 'song'; song: 'courage' | 'ballad' | 'joke' };
 
 export type Popup =
   | { type: 'note'; title: string; text: string }
@@ -43,7 +44,8 @@ export type Popup =
   | { type: 'baker' }
   | { type: 'levelup' }
   | { type: 'story'; title: string; text: string }
-  | { type: 'patron'; id: string };
+  | { type: 'patron'; id: string }
+  | { type: 'bard' };
 
 export const popups: Popup[] = [];
 export const RAT_IDS = ['rat', 'orange_rat'];
@@ -194,7 +196,7 @@ export function act(run: Run, a: Action): boolean {
   switch (a.t) {
     case 'wait': spend(run, 100); return true;
     case 'rest': {
-      if (l.monsters.some((m) => !m.ally && !m.friendly && m.awake && isVisible(run, m.x, m.y))) { msg(run, 'You cannot rest with enemies nearby!', 'warn'); return false; }
+      if (l.monsters.some((m) => !m.ally && !m.friendly && m.awake && isVisible(run, m.x, m.y) && !monDef(m).flags?.includes('aquatic') && !monDef(m).flags?.includes('stationary'))) { msg(run, 'You cannot rest with enemies nearby!', 'warn'); return false; }
       spend(run, 100); return true;
     }
     case 'move': {
@@ -204,8 +206,7 @@ export function act(run: Run, a: Action): boolean {
       const target = actorAt(run, nx, ny);
       if (target && target !== p) {
         const m = target as Monster;
-        if (m.friendly) { if (m.def === 'baker') popups.push({ type: 'baker' }); return false; }
-        if (m.ally) {
+        if (m.ally || m.friendly) {
           // swap places with allies
           if (p.statuses.entangled) { msg(run, 'You are stuck!', 'warn'); return false; }
           m.x = p.x; m.y = p.y; p.x = nx; p.y = ny;
@@ -338,6 +339,17 @@ export function act(run: Run, a: Action): boolean {
       spend(run, 100);
       return true;
     }
+    case 'song': {
+      const cost = a.song === 'courage' ? 30 : a.song === 'ballad' ? 60 : 0;
+      if (p.gold < cost) { msg(run, '"No coin, no tune, friend."', 'warn'); return false; }
+      p.gold -= cost;
+      if (a.song === 'courage') { addStatus(run, p, 'might', 60, 4); addStatus(run, p, 'agile', 60); msg(run, 'The bard plays a stirring tune about a hero who looks a lot like you. You feel unstoppable.', 'good'); }
+      else if (a.song === 'ballad') { for (let i = 0; i < l.seen.length; i++) l.seen[i] = 1; msg(run, 'The bard sings the Ballad of This Exact Floor, verse by verse. You now know where everything is. You will never get the tune out of your head.', 'good'); }
+      else if (r.chance(0.5)) { p.hp = Math.min(s.maxHp, p.hp + 10); msg(run, '"Why did the skeleton not go to the party? He had no BODY to go with!" You laugh despite yourself. You feel a little better.', 'good'); }
+      else { addStatus(run, p, 'confused', 3); msg(run, '"What do you call a lich who tells jokes? A PUN-lich!" Your brain tries to leave your skull.', 'bad'); }
+      spend(run, 100);
+      return true;
+    }
     case 'talk': {
       const baker = l.monsters.find((m) => m.def === 'baker' && m.friendly);
       if (!baker) return false;
@@ -432,7 +444,7 @@ function openChest(run: Run, f: { id: string; x: number; y: number; used?: boole
     if (m) {
       const spot = nearestFree(run, l, f, (x, y) => walkable(l.tiles[y * l.w + x]), 2);
       if (spot) { m.x = spot.x; m.y = spot.y; }
-      m.maxHp = m.hp = 20 + run.depth * 9;
+      m.maxHp = m.hp = 15 + run.depth * 8;
       m.bonus = Math.floor(run.depth / 2);
       (m.carried ??= []).push(randomItem(run, run.depth + 3, { good: true }));
     }

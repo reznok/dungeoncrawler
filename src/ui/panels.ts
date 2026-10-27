@@ -219,12 +219,12 @@ export function levelUp(ui: GameUI, next?: Next) {
         const r = (p.talents[id] ?? 0) + 1;
         const ab = t.ability ? ABILITIES[t.ability] : null;
         const cost = ab ? [ab.mp ? `${ab.mp} MP` : '', ab.cooldown ? `${ab.cooldown}-turn cooldown` : ''].filter(Boolean).join(', ') : '';
-        html += `<div class="talent" data-t="${id}">${icon(ab?.icon ?? DISCIPLINES[t.disc].icon, 40)}<div style="flex:1"><div class="tn">${esc(t.name)}${t.max > 1 ? ` ${'★'.repeat(r)}${'☆'.repeat(t.max - r)}` : ''}</div><div class="tm">${esc(DISCIPLINES[t.disc].name)} · tier ${t.tier}${r > 1 ? ' · rank up' : ' · new'}${cost ? ' · ' + cost : ''}</div><div class="td">${esc(t.desc(r))}</div>${ab ? `<div class="tm">${esc(ab.desc)}</div>` : ''}</div></div>`;
+        html += `<div class="talent" data-t="${id}">${icon(ab?.icon ?? DISCIPLINES[t.disc].icon, 40)}<div style="flex:1"><div class="tn">${esc(t.name)}${t.max > 1 ? ` ${'★'.repeat(r)}${'☆'.repeat(t.max - r)}` : ''}</div><div class="tm">${esc(DISCIPLINES[t.disc].name)} · tier ${t.tier}${r > 1 ? ' · rank up' : ' · new'}${cost ? ' · ' + cost : ''}</div><div class="td">${esc(t.desc(r))}</div>${ab && !t.desc(r).includes(ab.desc) ? `<div class="tm">${esc(ab.desc)}</div>` : ''}</div></div>`;
       }
     }
     return html;
   };
-  const pnl = openPanel(ui.root, `Level ${p.level}`, render(), { onClose: () => { ui.refresh(); next?.(); } });
+  const pnl = openPanel(ui.root, p.pendingTalents ? 'Level up!' : 'Attributes', render(), { onClose: () => { ui.refresh(); next?.(); } });
   pnl.body.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
     const a = t.closest('[data-attr]')?.getAttribute('data-attr') as Attr | undefined;
@@ -363,6 +363,24 @@ export function patron(ui: GameUI, id: string, next?: Next) {
     ${cur0 ? `<p class="m-warn">You already serve ${esc(cur0.name)}. They will not take kindly to being abandoned.</p>` : ''}
     <div class="btnrow"><button class="btn primary" data-yes>Kneel</button><button class="btn" data-close>Not today</button></div>`, { center: true, onClose: next });
   pnl.body.querySelector('[data-yes]')!.addEventListener('click', () => { pnl.close(); ui.doAct({ t: 'worship', id }); });
+}
+
+export function bard(ui: GameUI, next?: Next) {
+  const p = ui.run.player;
+  const pnl = openPanel(ui.root, 'Lute the Bard', `<div style="text-align:center">${icon(MONSTERS.bard.tile, 64)}</div>
+    <p class="m-speech">"Ah! An audience! Finally! I have been practising down here for eleven years. Requests? I take requests. I take gold more."</p>
+    <p class="m-dim">You have ${p.gold} gold.</p>
+    <div class="menu-col" style="max-width:none">
+      <button class="btn" data-s="courage" ${p.gold < 30 ? 'disabled' : ''}>Song of Courage (30 gold)</button>
+      <button class="btn" data-s="ballad" ${p.gold < 60 ? 'disabled' : ''}>Ballad of This Exact Floor (60 gold)</button>
+      <button class="btn" data-s="joke">Tell me a joke (free, unfortunately)</button>
+      <button class="btn" data-close>Walk away quickly</button></div>`, { center: true, onClose: next });
+  pnl.body.addEventListener('click', (e) => {
+    const s = (e.target as HTMLElement).closest('[data-s]')?.getAttribute('data-s') as 'courage' | 'ballad' | 'joke' | undefined;
+    if (!s) return;
+    pnl.close();
+    ui.doAct({ t: 'song', song: s });
+  });
 }
 
 export function baker(ui: GameUI, next?: Next) {

@@ -84,8 +84,9 @@ function spawnTable(depth: number): MonsterDef[] {
 
 function pickMonster(run: Run, depth: number, ood: boolean): MonsterDef | undefined {
   const r = rng(run);
-  const lvl = ood ? depth + r.int(3, 5) : depth;
-  const pool = Object.values(MONSTERS).filter((d) => !d.unique && (d.rarity ?? 10) > 0 && d.level <= lvl + 1 && d.level >= lvl - 4 && d.id !== 'starter_spawn');
+  const lvl = ood ? depth + (depth >= 8 ? r.int(3, 4) : r.int(2, 3)) : depth;
+  const top = lvl + (lvl >= 4 ? 1 : 0);
+  const pool = Object.values(MONSTERS).filter((d) => !d.unique && (d.rarity ?? 10) > 0 && d.level <= top && d.level >= lvl - 4 && d.id !== 'starter_spawn');
   const usable = pool.length ? pool : spawnTable(depth);
   return r.weighted(usable, (d) => (d.rarity ?? 10) * Math.max(0.2, 1.6 - Math.abs(d.level - lvl) * 0.35));
 }
@@ -108,9 +109,9 @@ function populate(run: Run, l: Level, rooms: Room[]) {
   if (depth === MAX_DEPTH) return populateFinal(run, l, spots, take);
 
   // ---- monsters
-  const count = Math.round(7 + depth * 0.7 + r.int(0, 5));
+  const count = Math.round(5 + depth * 0.8 + r.int(0, 4));
   for (let i = 0; i < count; i++) {
-    const ood = r.chance(0.05 + depth * 0.004);
+    const ood = depth >= 3 && r.chance(0.04 + depth * 0.004);
     const def = pickMonster(run, depth, ood);
     if (!def) continue;
     if (ood && def.level > depth + 2) feeling = 'danger';
@@ -119,7 +120,7 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     const awake = r.chance(0.2);
     const m = spawnMonster(run, l, def.id, at.x, at.y, { awake });
     if (!m) continue;
-    const n = def.pack ? r.int(def.pack[0], def.pack[1]) - 1 : 0;
+    const n = def.pack ? r.int(def.pack[0], def.level >= depth ? def.pack[0] : def.pack[1]) - 1 : 0;
     for (let k = 0; k < n; k++) placeNear(run, l, at, def.id, awake);
     if (def.followers) for (let k = 0; k < r.int(def.followers.n[0], def.followers.n[1]); k++) placeNear(run, l, at, def.followers.id, awake);
   }
@@ -178,10 +179,17 @@ function populate(run: Run, l: Level, rooms: Room[]) {
     const at = take(spots);
     if (at) { l.tiles[at.y * l.w + at.x] = T.ALTAR; l.features.push({ kind: 'altar', x: at.x, y: at.y, id: patronPlan[depth] }); }
   }
+  // a travelling bard
+  if (depth >= 3 && depth <= 11 && !run.flags.bard && r.chance(0.2)) {
+    run.flags.bard = true;
+    const at = take(spots);
+    const m = at && spawnMonster(run, l, 'bard', at.x, at.y, { awake: true });
+    if (m) m.friendly = true;
+  }
   // treasure box (sometimes it bites)
   if (depth >= 2 && r.chance(0.4)) {
     const at = take(spots);
-    if (at) l.features.push({ kind: 'chest', x: at.x, y: at.y, id: r.chance(0.3) ? 'mimic' : 'loot' });
+    if (at) l.features.push({ kind: 'chest', x: at.x, y: at.y, id: depth >= 3 && r.chance(0.3) ? 'mimic' : 'loot' });
   }
   // story: the Baker
   if (depth === 6 && !run.flags.bakerMet) {

@@ -242,7 +242,8 @@ export class GameUI {
     const target = actorAt(run, cell.x, cell.y);
     if (target && target !== p && isVisible(run, cell.x, cell.y)) {
       const m = target as import('../core/types').Monster;
-      if (m.friendly && dist(m, p) <= 1) { P.baker(this); return; }
+      if (m.friendly && dist(m, p) <= 1 && m.def === 'baker') { P.baker(this); return; }
+      if (m.friendly && dist(m, p) <= 1 && m.def === 'bard') { P.bard(this); return; }
       if (dist(cell, p) <= 1) return this.doAct({ t: 'move', dx: cell.x - p.x, dy: cell.y - p.y });
       if (!m.ally && canFireAt(run, m)) return this.doAct({ t: 'fire', target: cell });
     }
@@ -337,6 +338,7 @@ export class GameUI {
       case 'baker': P.baker(this, next); break;
       case 'levelup': P.levelUp(this, next); break;
       case 'patron': P.patron(this, pop.id, next); break;
+      case 'bard': P.bard(this, next); break;
     }
   }
 

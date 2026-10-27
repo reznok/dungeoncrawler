@@ -6,6 +6,7 @@ import { distanceMap, downhill, findPath, UNREACHED } from '../world/path';
 import { playerCanEnter, canFireAt, type Action } from './turn';
 import { nearestEnemy } from './abilities';
 import { playerStats } from './stats';
+import { MONSTERS } from '../data/monsters';
 
 function knownPassable(run: Run, x: number, y: number): boolean {
   const l = cur(run);
@@ -23,9 +24,19 @@ function stepTo(run: Run, next: Pos): Action {
   return { t: 'move', dx: next.x - p.x, dy: next.y - p.y };
 }
 
-export function enemiesInView(run: Run) {
+export function enemiesInView(run: Run, threatsOnly = false) {
   const s = playerStats(run);
-  return cur(run).monsters.filter((m) => !m.ally && !m.friendly && m.hp > 0 && isVisible(run, m.x, m.y) && (!m.statuses.invisible || s.flags.has('see_invis')));
+  const p = run.player;
+  return cur(run).monsters.filter((m) => {
+    if (m.ally || m.friendly || m.hp <= 0 || !isVisible(run, m.x, m.y)) return false;
+    if (m.statuses.invisible && !s.flags.has('see_invis')) return false;
+    if (threatsOnly && dist(m, p) > 2) {
+      // things that cannot come for you do not stop exploration
+      const f = MONSTERS[m.def].flags ?? [];
+      if (f.includes('aquatic') || f.includes('stationary')) return false;
+    }
+    return true;
+  });
 }
 
 export function travelStep(run: Run, dest: Pos): Action | null {
@@ -40,7 +51,7 @@ export function travelStep(run: Run, dest: Pos): Action | null {
 export function exploreStep(run: Run): Action | string {
   const p = run.player;
   const l = cur(run);
-  if (enemiesInView(run).length) return 'There are enemies in view.';
+  if (enemiesInView(run, true).length) return 'There are enemies in view.';
   // targets: frontier tiles and unvisited items
   const targets: Pos[] = [];
   for (let y = 1; y < l.h - 1; y++) for (let x = 1; x < l.w - 1; x++) {
@@ -77,7 +88,7 @@ export function stairsStep(run: Run): Action | string {
 export function restStep(run: Run): Action | string {
   const p = run.player;
   const s = playerStats(run);
-  if (enemiesInView(run).length) return 'You cannot rest with enemies in view.';
+  if (enemiesInView(run, true).length) return 'You cannot rest with enemies in view.';
   const needs = p.hp < s.maxHp || p.mp < s.maxMp || Object.keys(p.statuses).some((k) => ['poison', 'slow', 'confused', 'blind', 'weak', 'fatigue', 'corroded', 'doughy'].includes(k)) || Object.keys(p.cooldowns).length > 0;
   if (!needs) return 'You feel fully rested.';
   return { t: 'rest' };

@@ -98,6 +98,7 @@ export class App {
   play(run: Run) {
     this.root.innerHTML = '';
     this.game = new GameUI(this.root, run, (r) => this.end(r));
+    if (import.meta.env.DEV) (window as unknown as { game: GameUI }).game = this.game;
   }
 
   end(run: Run) {

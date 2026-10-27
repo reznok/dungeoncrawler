@@ -56,8 +56,9 @@ export function newRun(seed: number, name: string, ancestryId: string, callingId
   }
   if (cal.knowsPotions) for (const c of Object.values(CONSUMABLES)) if (c.kind === 'potion') learn(run, c.id);
   if (player.equip.weapon && WEAPONS[player.equip.weapon.base]?.twoHanded && player.equip.offhand) { addToInventory(run, player.equip.offhand); delete player.equip.offhand; }
-  // everyone starts knowing curing
+  // everyone starts knowing curing, and carries one
   learn(run, 'p_curing');
+  addToInventory(run, makeItem(run, 'p_curing'));
   planUniques(run);
   planPatrons(run);
   run.flags.ghosts = JSON.stringify(ghosts.filter((g) => g.depth > 1 && g.depth < 15).slice(0, 8));
