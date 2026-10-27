@@ -18,6 +18,7 @@ export function spawnMonster(run: Run, l: Level, id: string, x: number, y: numbe
   };
   if (def.unique) m.name = def.name;
   if (def.flags?.includes('invisible')) m.statuses.invisible = { turns: 99999 };
+  if (run.player.piety?.god === 'rat' && (id === 'rat' || id === 'orange_rat')) m.friendly = true;
   l.monsters.push(m);
   return m;
 }

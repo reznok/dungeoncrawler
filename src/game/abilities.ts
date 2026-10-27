@@ -10,6 +10,8 @@ import { playerStats } from './stats';
 import { pushFx, ELEMENT_COLOR } from './fx';
 import { spawnMonster, noise } from './monsters';
 import { revealMap } from './fov';
+import { favorCost } from './progression';
+import { randomItem } from './items';
 
 export function abilityPower(run: Run, caster: ActorBase, rank: number): number {
   if (isPlayer(caster)) return playerStats(run).spellPower + (rank - 1) * 5;
@@ -143,6 +145,23 @@ export function execAbility(run: Run, caster: Player | Monster, id: string, targ
     if (pick === 'summon_rat' || pick === 'heal' || pick === 'blink_away') return execAbility(run, caster, pick, caster, rank);
     return execAbility(run, caster, pick, target, rank);
   }
+  if (id === 'dm_fiat' && player) {
+    const roll = r.int(1, 20);
+    msg(run, `The Dungeon Master rolls a d20... ${roll}!`, 'story');
+    if (roll === 20) { const it = randomItem(run, run.depth + 5, { good: true }); it.known = true; l.items.push({ x: caster.x, y: caster.y, item: it, seen: true }); msg(run, 'NATURAL TWENTY! Loot falls from the sky.', 'good'); return true; }
+    if (roll === 1) { msg(run, 'Critical failure. The DM sighs and summons a mimic "for narrative reasons".', 'bad'); spawnNear(run, caster, 'mimic', false); return true; }
+    if (roll >= 15) { caster.hp = playerStats(run).maxHp; msg(run, "You feel fully rested. Don't ask how.", 'good'); }
+    else if (roll >= 8) { for (const t of enemiesOf(run, caster).filter((t0) => dist(t0, caster) <= 5)) addStatus(run, t, 'afraid', 8); msg(run, 'The monsters suddenly remember they left the oven on.', 'good'); return true; }
+  }
+  if (id === 'speed_warp' && player) {
+    const down = l.down[0];
+    const spot = down && nearestFree(run, l, down, (x, y) => walkable(tileAt(l, x, y)), 3);
+    if (!spot) { msg(run, 'There is no warp zone on this floor.', 'dim'); return false; }
+    pushFx({ kind: 'flash', at: [{ x: caster.x, y: caster.y }], color: '#4ef', depth: run.depth });
+    caster.x = spot.x; caster.y = spot.y;
+    msg(run, 'You clip through the level geometry. Skip!', 'good');
+    return true;
+  }
   if (id === 'polymorph') {
     const t = actorAt(run, target.x, target.y);
     if (!t || isPlayer(t)) { msg(run, 'Nothing happens.', 'dim'); return true; }
@@ -248,7 +267,8 @@ export function execAbility(run: Run, caster: Player | Monster, id: string, targ
       if (player) {
         const s = playerStats(run);
         caster.hp = Math.min(s.maxHp, caster.hp + amt);
-        msg(run, 'You feel better.', 'good');
+        if (id === 'hearth_heal') for (const k of CLEANSABLE) delete caster.statuses[k];
+        msg(run, id === 'hearth_heal' ? 'Warmth spreads through you, like a kitchen in winter.' : 'You feel better.', 'good');
       } else {
         const m = caster as Monster;
         amt = Math.round(amt * 0.8);
@@ -259,7 +279,7 @@ export function execAbility(run: Run, caster: Player | Monster, id: string, targ
     }
     case 'buff': {
       const pw = a.statusPower !== undefined ? a.statusPower + (player ? Math.floor(power / 5) + (rank - 1) * 3 : 0) : undefined;
-      addStatus(run, caster, a.status!, (a.statusTurns ?? 10) + (player ? (rank - 1) * 3 : 0), a.id === 'shield' ? 12 + Math.round(power * 0.8) + (rank - 1) * 6 : pw);
+      addStatus(run, caster, a.status!, (a.statusTurns ?? 10) + (player ? (rank - 1) * 3 : 0), a.id === 'shield' ? 12 + Math.round(power * 0.8) + (rank - 1) * 6 : a.id === 'hearth_ward' ? 20 + Math.round((run.player.piety?.favor ?? 0) / 3) : pw);
       if (a.status === 'invisible' && player) for (const m of l.monsters) if (!m.ally && !monDef(m).flags?.includes('see_invis')) m.lastSeen = undefined;
       return true;
     }
@@ -270,7 +290,8 @@ export function execAbility(run: Run, caster: Player | Monster, id: string, targ
       const pw = power + (player ? (rank - 1) * 5 : 0);
       const turns0 = a.statusTurns;
       const a2 = { ...a, statusTurns: (turns0 ?? 5) + (player && a.id === 'stun_strike' ? rank - 1 : 0) };
-      applyHex(run, a2, caster, t, pw);
+      const landed = applyHex(run, a2, caster, t, pw);
+      if (landed && id === 'dm_fumble') addStatus(run, t, 'confused', 5);
       return true;
     }
     case 'mass_hex': {
@@ -469,6 +490,8 @@ export function canUseAbility(run: Run, id: string): string | null {
   const a = ABILITIES[id];
   if (!a) return 'Unknown ability.';
   const c = abilityCost(run, id);
+  const fc = favorCost(run, id);
+  if (fc && (p.piety?.favor ?? 0) < fc) return `Not enough favour for ${a.name} (${fc} needed).`;
   if ((p.cooldowns[id] ?? 0) > 0) return `${a.name} is recharging (${p.cooldowns[id]} turns).`;
   if (p.mp < c.mp) return `Not enough magic for ${a.name}.`;
   if (p.statuses.silenced && c.mp > 0) return 'You are silenced.';

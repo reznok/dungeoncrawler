@@ -9,6 +9,7 @@ import { itemTile } from '../game/items';
 import { playerStats, ancestryOf } from '../game/stats';
 import { sensedMonsters } from '../game/fov';
 import { SHRINES } from '../game/levels';
+import { PATRONS } from '../data/patrons';
 import { threat } from '../game/combat';
 import { drawTile } from './tiles';
 
@@ -128,7 +129,7 @@ export class Renderer {
         let key = TERRAIN_TILES[t];
         const f = featAt.get(i);
         if (t === T.SHOP && f) key = SHOP_TILES[f.id] ?? key;
-        if (t === T.ALTAR && f) key = SHRINES[f.id]?.tile ?? key;
+        if (t === T.ALTAR && f) key = (f.kind === 'altar' ? PATRONS[f.id]?.altar : SHRINES[f.id]?.tile) ?? key;
         if (t === T.DOWN && run.depth === 14) key = 'dngn/gateways/enter_zot_open';
         if (key) drawTile(ctx, key, h, dx, dy, ts);
         if (f && f.kind === 'trap' && !f.hidden) drawTile(ctx, TRAP_TILES[f.id] ?? 'dngn/traps/pressure_plate', 0, dx, dy, ts);

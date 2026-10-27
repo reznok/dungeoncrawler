@@ -32,7 +32,16 @@ export function updateFov(run: Run) {
   }
   if (view.newlySeen.length) view.interrupt = true;
   for (const it of l.items) if (view.visible.has(it.y * l.w + it.x)) it.seen = true;
-  for (const f of l.features) if (view.visible.has(f.y * l.w + f.x) && f.kind !== 'trap') f.hidden = false;
+  for (const f of l.features) {
+    if (!view.visible.has(f.y * l.w + f.x) || f.kind === 'trap') continue;
+    f.hidden = false;
+    if (f.data?.spotted) continue;
+    (f.data ??= {}).spotted = true;
+    if (f.kind === 'altar') msg(run, `You see an altar. Something here wants to be worshipped.`, 'story');
+    if (f.kind === 'shop') msg(run, `You see a shop: ${String(f.data.name ?? 'a shop')}.`, 'gold');
+    if (f.kind === 'shrine') msg(run, 'You see a strange shrine.', 'story');
+    if (f.kind === 'chest' && !f.used) msg(run, 'You see a box. A nice, normal box.', 'dim');
+  }
 }
 
 export function revealMap(run: Run, from: Pos, radius: number) {

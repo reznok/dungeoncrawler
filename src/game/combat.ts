@@ -5,7 +5,7 @@ import { WEAPONS, WEAPON_EGOS } from '../data/items';
 import { DEATH_QUIPS } from '../data/flavor';
 import { cur, isPlayer, isVisible, msg, name, Name, rng, view, nearestFree } from './state';
 import { playerStats, resistMult, type Stats } from './stats';
-import { gainXp } from './progression';
+import { gainXp, gainFavor } from './progression';
 import { pushFx, ELEMENT_COLOR } from './fx';
 import { addToInventory, makeItem, randomItem } from './items';
 import { walkable } from '../data/terrain';
@@ -179,6 +179,16 @@ export function monsterDies(run: Run, m: Monster, killer: ActorBase | null) {
     if (s.killHeal) p.hp = Math.min(s.maxHp, p.hp + s.killHeal);
     if (s.killMp) p.mp = Math.min(s.maxMp, p.mp + s.killMp);
     if (s.flags.has('kill_haste')) addStatus(run, p, 'haste', 3);
+    if (p.piety) {
+      const g = p.piety.god;
+      let f = 1;
+      if (g === 'hettie') f = ['dough', 'demon', 'undead', 'flesh'].includes(def.family) ? 3 : 1;
+      if (g === 'dm') f = def.unique ? 8 : 1 + (r.chance(0.2) ? 1 : 0);
+      if (g === 'speed') f = r.chance(0.5) ? 1 : 0;
+      if (g === 'rat') f = ['rat', 'orange_rat'].includes(def.id) ? -10 : 1;
+      if (g === 'thing') f = def.unique ? 6 : 1 + (def.level > run.depth ? 1 : 0);
+      gainFavor(run, f, f < 0 ? 'The Rat King weeps for his child.' : undefined);
+    }
     if (s.flags.has('punchline')) {
       msg(run, 'Confetti explodes everywhere! Ba-dum tss.', 'good');
       pushFx({ kind: 'flash', at: [{ x: m.x, y: m.y }], color: '#ff66cc', depth: run.depth });

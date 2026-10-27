@@ -3,6 +3,7 @@ import { ANCESTRIES, CALLINGS } from '../data/characters';
 import { ARMOURS, ARMOUR_EGOS, JEWELS, WEAPONS, type WeaponDef } from '../data/items';
 import { MUTATIONS } from '../data/mutations';
 import { TALENTS } from '../data/talents';
+import { PATRONS } from '../data/patrons';
 
 export interface Stats {
   might: number; agility: number; wits: number;
@@ -67,6 +68,7 @@ export function collectMods(run: Run): Mods[] {
     out.push(t.mods(rank));
   }
   for (const id of p.mutations) { const m = MUTATIONS[id]; if (m?.mods) out.push(m.mods); }
+  if (p.piety && PATRONS[p.piety.god]) out.push(PATRONS[p.piety.god].passive(p.piety.favor));
   const st = p.statuses;
   if (st.might) out.push({ dmg: 4 + (st.might.power ?? 0) });
   if (st.agile) out.push({ ev: 5, acc: 5 });
@@ -91,7 +93,7 @@ function statsKey(run: Run): string {
   const p = run.player;
   let k = `${run.tick}|${p.level}|${p.talents.last_stand ? p.hp : ''}|${p.bonusHp}|${p.attrs.might},${p.attrs.agility},${p.attrs.wits}|${p.mutations.join()}|`;
   for (const [s, v] of Object.entries(p.statuses)) k += s + (v.power ?? '') + ',';
-  k += '|';
+  k += '|' + (p.piety ? p.piety.god + p.piety.favor : '') + '|';
   for (const [t, r] of Object.entries(p.talents)) k += t + r + ',';
   k += '|';
   for (const [s, it] of Object.entries(p.equip)) if (it) k += s + it.id + ':' + (it.ench ?? 0) + (it.ego ?? '') + ',';

@@ -20,3 +20,7 @@ document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: fals
 document.addEventListener('touchmove', (e) => { if ((e.target as HTMLElement).closest('.panel-b, .screen')) return; e.preventDefault(); }, { passive: false });
 
 main();
+
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* offline play is optional */ });
+}

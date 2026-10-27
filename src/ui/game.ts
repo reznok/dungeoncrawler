@@ -10,10 +10,12 @@ import { actorAt, cur, isVisible, msg, view } from '../game/state';
 import { playerStats, xpForLevel } from '../game/stats';
 import { abilityCost, canUseAbility, defaultTarget } from '../game/abilities';
 import { itemTile, itemName } from '../game/items';
-import { playerAbilities } from '../game/progression';
+import { playerAbilities, favorCost } from '../game/progression';
 import { saveRun, loadSettings, saveSettings } from '../game/save';
 import { findPath } from '../world/path';
 import { Renderer } from './renderer';
+import { MONSTERS } from '../data/monsters';
+import { threat } from '../game/combat';
 import { el, esc, toast } from './dom';
 import { icon } from './tiles';
 import * as P from './panels';
@@ -32,6 +34,7 @@ export class GameUI {
   ctxEl!: HTMLElement;
   bannerEl!: HTMLElement;
   minimap!: HTMLCanvasElement;
+  foesEl!: HTMLElement;
   auto: Auto = null;
   targeting: Targeting | null = null;
   lastStep = 0;
@@ -81,7 +84,8 @@ export class GameUI {
     this.ctxEl = el('div'); this.ctxEl.id = 'ctx';
     this.bannerEl = el('div'); this.bannerEl.id = 'banner'; this.bannerEl.style.display = 'none';
     this.minimap = el('canvas'); this.minimap.id = 'minimap'; this.minimap.style.display = 'none';
-    wrap.append(this.canvas, this.logEl, this.ctxEl, this.bannerEl, this.minimap);
+    this.foesEl = el('div'); this.foesEl.id = 'foes';
+    wrap.append(this.canvas, this.logEl, this.ctxEl, this.foesEl, this.bannerEl, this.minimap);
     this.quickEl = el('div'); this.quickEl.id = 'quick';
     const actions = el('div'); actions.id = 'actions';
     const A = (id: string, ico: string, label: string) => `<div class="act" data-a="${id}">${icon(ico, 24)}<span>${label}</span></div>`;
@@ -116,10 +120,17 @@ export class GameUI {
       if (b === 'pickup') this.doAct({ t: 'pickup' });
       if (b === 'stairs') this.doAct({ t: 'stairs' });
       if (b === 'shop') P.shop(this);
+      if (b === 'altar') { const f = cur(this.run).features.find((x) => x.kind === 'altar' && x.x === this.run.player.x && x.y === this.run.player.y); if (f) P.patron(this, f.id); }
       if (b === 'shrine') { const f = cur(this.run).features.find((x) => x.kind === 'shrine' && x.x === this.run.player.x && x.y === this.run.player.y); if (f) P.shrine(this, f.id); }
     });
     this.bannerEl.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-cancel]')) this.cancelTarget(); });
     this.minimap.addEventListener('click', () => { this.showMinimap = false; this.minimap.style.display = 'none'; });
+    this.foesEl.addEventListener('click', (e) => {
+      const f = (e.target as HTMLElement).closest('[data-foe]')?.getAttribute('data-foe');
+      if (!f) return;
+      const [x, y] = f.split(',').map(Number);
+      P.examine(this, { x, y });
+    });
     this.bindCanvas();
   }
 
@@ -224,6 +235,8 @@ export class GameUI {
       if (t === T.SHOP) return P.shop(this);
       const f = l.features.find((x) => x.kind === 'shrine' && x.x === p.x && x.y === p.y && !x.used);
       if (f) return P.shrine(this, f.id);
+      const alt = l.features.find((x) => x.kind === 'altar' && x.x === p.x && x.y === p.y);
+      if (alt) return P.patron(this, alt.id);
       return this.doAct({ t: 'wait' });
     }
     const target = actorAt(run, cell.x, cell.y);
@@ -323,6 +336,7 @@ export class GameUI {
       case 'shrine': P.shrine(this, pop.id, next); break;
       case 'baker': P.baker(this, next); break;
       case 'levelup': P.levelUp(this, next); break;
+      case 'patron': P.patron(this, pop.id, next); break;
     }
   }
 
@@ -459,7 +473,9 @@ export class GameUI {
         if (!a || !playerAbilities(run).some((x) => x.id === id)) return `<div class="qs empty" data-q="${i}">+</div>`;
         const cd = p.cooldowns[id] ?? 0;
         const c = abilityCost(run, id);
-        return `<div class="qs${cd ? ' cd' : ''}${p.mp < c.mp ? ' nomp' : ''}" data-q="${i}" data-cd="${cd}">${icon(a.icon, 34)}${c.mp ? `<span class="qn" style="color:#9cf">${c.mp}</span>` : ''}</div>`;
+        const fc = favorCost(run, id);
+        const short = fc ? (p.piety?.favor ?? 0) < fc : p.mp < c.mp;
+        return `<div class="qs${cd ? ' cd' : ''}${short ? ' nomp' : ''}" data-q="${i}" data-cd="${cd}">${icon(a.icon, 34)}${fc ? `<span class="qn" style="color:#fd6">${fc}</span>` : c.mp ? `<span class="qn" style="color:#9cf">${c.mp}</span>` : ''}</div>`;
       }
       const base = q.slice(2);
       const items = p.inventory.filter((x) => x.base === base);
@@ -467,6 +483,13 @@ export class GameUI {
       const it = items[0];
       const tile = it ? itemTile(run, it) : CONSUMABLES[base] ? 'item/potion/unknown' : 'item/misc/misc_box_of_beasts';
       return `<div class="qs${n ? '' : ' empty'}" data-q="${i}">${icon(tile, 32)}<span class="qn">${n}</span></div>`;
+    }).join('');
+    // visible enemies
+    const foes = enemiesInView(run).sort((a, b) => dist(a, p) - dist(b, p)).slice(0, 5);
+    this.foesEl.innerHTML = foes.map((m) => {
+      const d = MONSTERS[m.def];
+      const col = { trivial: '#888', easy: '#8fdf7a', tough: '#ffb35c', nasty: '#ff6a5c' }[threat(run, m)];
+      return `<div class="foe" data-foe="${m.x},${m.y}" style="border-color:${col}">${icon(m.tile ?? d.tile, 26, m.id)}<i style="width:${Math.max(0, 100 * m.hp / m.maxHp)}%"></i></div>`;
     }).join('');
     // context buttons
     const l = cur(run);
@@ -478,6 +501,7 @@ export class GameUI {
     if (t === T.UP) ctx += `<button class="btn" data-c="stairs">▲ Ascend</button>`;
     if (t === T.SHOP) ctx += `<button class="btn" data-c="shop">Shop</button>`;
     if (t === T.ALTAR && l.features.some((f) => f.kind === 'shrine' && f.x === p.x && f.y === p.y && !f.used)) ctx += `<button class="btn" data-c="shrine">Shrine</button>`;
+    if (t === T.ALTAR && l.features.some((f) => f.kind === 'altar' && f.x === p.x && f.y === p.y)) ctx += `<button class="btn" data-c="altar">Altar</button>`;
     this.ctxEl.innerHTML = ctx;
     for (const b of document.querySelectorAll('#actions .act')) {
       const a = b.getAttribute('data-a');

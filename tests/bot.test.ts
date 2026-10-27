@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newRun } from '../src/game/run';
 import { act, popups, type Action } from '../src/game/turn';
-import { exploreStep, fightStep, restStep, stairsStep } from '../src/game/explore';
+import { exploreStep, fightStep, restStep, stairsStep, travelStep } from '../src/game/explore';
 import { ANCESTRIES, CALLINGS } from '../src/data/characters';
 import { talentOffers, takeTalent, playerAbilities, spendAttr } from '../src/game/progression';
 import { defaultTarget } from '../src/game/abilities';
@@ -17,6 +17,9 @@ function botTurn(run: Run, r: Rng): boolean {
   while (p.pendingTalents > 0) { const o = talentOffers(run); if (!o.length) { p.pendingTalents = 0; break; } takeTalent(run, r.pick(o)); }
   while (p.attrPoints > 0) spendAttr(run, r.pick(['might', 'agility', 'wits'] as const));
   const s = playerStats(run);
+  const altar = cur(run).features.find((f) => f.kind === 'altar' && f.x === p.x && f.y === p.y);
+  if (altar && p.piety?.god !== altar.id && act(run, { t: 'worship', id: altar.id })) return true;
+  if (p.piety) p.piety.favor = Math.max(p.piety.favor, 60); // exercise patron powers
   // use stuff sometimes
   if (r.chance(0.08) && p.inventory.length) {
     const it = r.pick(p.inventory);
@@ -33,6 +36,8 @@ function botTurn(run: Run, r: Rng): boolean {
   const fight = fightStep(run);
   if (typeof fight !== 'string') return act(run, fight);
   if (p.hp < s.maxHp * 0.7) { const rest = restStep(run); if (typeof rest !== 'string') return act(run, rest); }
+  const alt = cur(run).features.find((f) => f.kind === 'altar' && !p.piety && cur(run).seen[f.y * cur(run).w + f.x]);
+  if (alt && !(alt.x === p.x && alt.y === p.y)) { const step = travelStep(run, alt); if (step && act(run, step)) return true; }
   const ex = exploreStep(run);
   if (typeof ex !== 'string') { if (act(run, ex)) return true; }
   const here = cur(run).items.some((i) => i.x === p.x && i.y === p.y);

@@ -13,7 +13,8 @@ import { updateFov } from './fov';
 import { canMonsterEnter, monsterAct, monsterSpeed, noise, noticeChecks, spawnMonster } from './monsters';
 import { abilityCost, canUseAbility, execAbility, randomSpot, los } from './abilities';
 import { addToInventory, isEquipment, isKnown, itemName, learn, makeItem, randomItem } from './items';
-import { gainMutation, gainXp, levelUp, playerAbilities, canTake, autoQuickSlot } from './progression';
+import { gainMutation, gainXp, levelUp, playerAbilities, canTake, autoQuickSlot, favorCost, gainFavor } from './progression';
+import { PATRONS } from '../data/patrons';
 import { createLevel, SHRINES } from './levels';
 import { pushFx } from './fx';
 
@@ -32,7 +33,8 @@ export type Action =
   | { t: 'buy'; index: number }
   | { t: 'shrine' }
   | { t: 'fountain'; at: Pos }
-  | { t: 'talk'; choice: 'gift' | 'attack' };
+  | { t: 'talk'; choice: 'gift' | 'attack' }
+  | { t: 'worship'; id: string };
 
 export type Popup =
   | { type: 'note'; title: string; text: string }
@@ -40,9 +42,11 @@ export type Popup =
   | { type: 'shrine'; id: string }
   | { type: 'baker' }
   | { type: 'levelup' }
-  | { type: 'story'; title: string; text: string };
+  | { type: 'story'; title: string; text: string }
+  | { type: 'patron'; id: string };
 
 export const popups: Popup[] = [];
+export const RAT_IDS = ['rat', 'orange_rat'];
 
 // ------------------------------------------------------------------ helpers
 
@@ -262,7 +266,9 @@ export function act(run: Run, a: Action): boolean {
       if (ab.target !== 'self' && dist(p, a.target) > ab.range && ab.kind !== 'strike') { msg(run, 'Out of range.', 'warn'); return false; }
       if (!execAbility(run, p, a.id, a.target, known.rank)) return false;
       const c = abilityCost(run, a.id);
-      p.mp -= c.mp;
+      const fc = favorCost(run, a.id);
+      if (fc && p.piety) p.piety.favor -= fc;
+      else p.mp -= c.mp;
       if (c.cooldown) p.cooldowns[a.id] = c.cooldown;
       noise(run, p, 3);
       spend(run, actionCost(run, 100));
@@ -314,6 +320,21 @@ export function act(run: Run, a: Action): boolean {
       else if (roll < 0.9) { gainXp(run, xpForLevel(p.level + 1) - xpForLevel(p.level) >> 2); msg(run, 'You drink deep and feel wiser. Somehow.', 'good'); }
       else { const it = randomItem(run, run.depth, { cat: 'potion' }); l.items.push({ x: p.x, y: p.y, item: it }); msg(run, 'You fish something out of the fountain.', 'good'); }
       if (r.chance(0.5)) { f.used = true; msg(run, 'The fountain dries up.', 'dim'); }
+      spend(run, 100);
+      return true;
+    }
+    case 'worship': {
+      const pat = PATRONS[a.id];
+      if (!pat) return false;
+      const old = p.piety && PATRONS[p.piety.god];
+      if (old && old.id === pat.id) return false;
+      if (old) {
+        msg(run, `${old.name} is furious that you have abandoned them!`, 'bad');
+        addStatus(run, p, r.pick(['weak', 'slow', 'marked', 'doughy']), 40);
+      }
+      p.piety = { god: pat.id, favor: 5, unlocked: [] };
+      msg(run, `You kneel before ${pat.name}. You are now their ${pat.title}.`, 'story');
+      if (pat.id === 'rat') for (const m of l.monsters) if (RAT_IDS.includes(m.def) && !m.ally) { m.friendly = true; }
       spend(run, 100);
       return true;
     }
@@ -393,6 +414,7 @@ function arrive(run: Run) {
     else if (f.kind === 'shrine' && !f.used) popups.push({ type: 'shrine', id: f.id });
     else if (f.kind === 'note' && !f.used) { f.used = true; popups.push({ type: 'note', title: 'A notice on the wall', text: String(f.data?.text ?? '') }); }
     else if (f.kind === 'chest' && !f.used) openChest(run, f);
+    else if (f.kind === 'altar' && p.piety?.god !== f.id) popups.push({ type: 'patron', id: f.id });
   }
   const t = tileAt(l, p.x, p.y);
   if (t === T.DOWN) msg(run, 'There are stairs down here.', 'dim');
@@ -477,6 +499,10 @@ export function changeLevel(run: Run, depth: number, fell: boolean) {
     if (s2) { m.x = s2.x; m.y = s2.y; l.monsters.push(m); }
   }
   run.stats.deepest = Math.max(run.stats.deepest, depth);
+  if (p.piety?.god === 'speed') {
+    if (!goingDown && !fell) gainFavor(run, -30, 'The Speedrunner screams: "NO BACKTRACKING! RESET! RESET!"');
+    else if (!l.visited) gainFavor(run, 6, 'The Speedrunner approves: "Good split."');
+  }
   if (!l.visited) {
     l.visited = true;
     msg(run, `${depth === MAX_DEPTH ? 'THE PROVING CHAMBER' : `Depth ${depth}`}. ${l.feeling ?? ''}`, 'story');

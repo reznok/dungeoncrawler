@@ -8,6 +8,7 @@ import { distanceMap, UNREACHED } from '../world/path';
 import { rng } from './state';
 import { spawnMonster } from './monsters';
 import { itemPrice, makeItem, randomItem } from './items';
+import { PATRONS } from '../data/patrons';
 
 export const SHRINES: Record<string, { name: string; tile: string; desc: string; offer: string }> = {
   hunger: { name: 'Shrine of the Hungry God', tile: 'dngn/altars/kikubaaqudgha', desc: 'A shrine with a mouth. It is drooling.', offer: 'Feed it 10% of your max HP, forever. Gain a talent.' },
@@ -28,6 +29,15 @@ export const SHADOW_TILES: Record<string, string> = {
 export interface GhostInfo { name: string; title: string; level: number; depth: number }
 
 /** Run-start setup: which uniques appear on which floors. */
+export function planPatrons(run: Run) {
+  const r = rng(run);
+  const ids = r.sample(Object.keys(PATRONS), 3);
+  const depths = r.sample([2, 3, 4, 5, 7, 8, 9], 3);
+  const plan: Record<number, string> = {};
+  ids.forEach((id, i) => { plan[depths[i]] = id; });
+  run.flags.patrons = JSON.stringify(plan);
+}
+
 export function planUniques(run: Run) {
   const r = rng(run);
   const taken = new Set<number>();
@@ -161,6 +171,12 @@ function populate(run: Run, l: Level, rooms: Room[]) {
       m.tile = SHADOW_TILES[p.ancestry] ?? SHADOW_TILES.human;
       l.feeling = 'You catch a glimpse of yourself in the dark. You were not holding a mirror.';
     }
+  }
+  // a patron's altar
+  const patronPlan: Record<string, string> = JSON.parse(String(run.flags.patrons ?? '{}'));
+  if (patronPlan[depth]) {
+    const at = take(spots);
+    if (at) { l.tiles[at.y * l.w + at.x] = T.ALTAR; l.features.push({ kind: 'altar', x: at.x, y: at.y, id: patronPlan[depth] }); }
   }
   // treasure box (sometimes it bites)
   if (depth >= 2 && r.chance(0.4)) {

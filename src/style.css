@@ -83,6 +83,9 @@ button { font: inherit; color: inherit; }
 #banner { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); background: #000c; border: 1px solid var(--accent); border-radius: 10px; padding: 6px 10px; font-size: 14px; display: flex; gap: 8px; align-items: center; white-space: nowrap; }
 #ctx { position: absolute; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
 #ctx .btn { min-height: 40px; padding: 6px 12px; font-size: 15px; background: #2c2138e6; border-color: var(--accent); }
+#foes { position: absolute; left: 6px; top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.foe { position: relative; width: 34px; height: 34px; border-radius: 8px; background: #000a; border: 1px solid; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer; }
+.foe i { position: absolute; left: 0; bottom: 0; height: 3px; background: #e04030; }
 #minimap { position: absolute; top: 6px; right: 6px; border: 1px solid var(--line); background: #000a; image-rendering: pixelated; border-radius: 4px; }
 
 #quick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 4px 6px; background: var(--bg2); border-top: 1px solid var(--line); flex: none; }

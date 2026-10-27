@@ -14,6 +14,8 @@ import { playerAbilities, spendAttr, takeTalent, talentOffers } from '../game/pr
 import { ancestryOf, callingOf, playerStats, xpForLevel, RING_SLOTS } from '../game/stats';
 import { threat } from '../game/combat';
 import { SHRINES } from '../game/levels';
+import { PATRONS } from '../data/patrons';
+import { favorCost } from '../game/progression';
 import { saveRun, deleteSave, saveSettings } from '../game/save';
 import { esc, openPanel, toast } from './dom';
 import { icon, stackIcon } from './tiles';
@@ -182,6 +184,7 @@ export function character(ui: GameUI) {
         <div>rNecro<b>${res(s.res.necro)}</b></div><div>Regen<b>${s.regen >= 0 ? '+' : ''}${s.regen}</b></div>
       </div>
       <div class="list-h">Quirks</div><div class="sub" style="color:var(--dim);font-size:14px">${anc.quirks.map(esc).join(' ')}</div>
+      ${p.piety ? `<div class="list-h">Patron</div><div class="item" style="cursor:default">${icon(PATRONS[p.piety.god].altar, 32)}<div class="nm">${esc(PATRONS[p.piety.god].name)}<div class="sub">Favour ${p.piety.favor} · ${esc(PATRONS[p.piety.god].passiveText)}</div></div></div>` : ''}
       <div class="list-h">Talents</div>${talents || '<div class="m-dim">None yet.</div>'}
       <div class="list-h">Mutations (${p.mutations.length}/${MUTATION_SLOTS})</div>${muts || '<div class="m-dim">None. Yet.</div>'}
       <div class="list-h">Disciplines you are drawn to</div><div style="font-size:14px">${[...new Set([...cal.disciplines, ...p.disciplines])].map((d) => esc(DISCIPLINES[d].name)).join(', ')}</div>
@@ -249,7 +252,8 @@ export function abilities(ui: GameUI) {
       const c = abilityCost(run, a.id);
       const why = canUseAbility(run, a.id);
       const inQ = p.quick.includes('a:' + a.id);
-      return `<div class="item" data-ab="${a.id}" style="${why ? 'opacity:.6' : ''}">${icon(d.icon, 36)}<div class="nm">${esc(d.name)} <span class="sub">${a.rank > 1 ? 'rank ' + a.rank : ''}</span><div class="sub">${[c.mp ? c.mp + ' MP' : '', c.cooldown ? c.cooldown + 't cooldown' : '', d.range ? 'range ' + d.range : 'self', p.cooldowns[a.id] ? `<b style="color:var(--warn)">${p.cooldowns[a.id]} turns</b>` : ''].filter(Boolean).join(' · ')}</div><div class="sub">${esc(d.desc)}</div></div><button class="btn small" data-pin="${a.id}">${inQ ? '★' : '☆'}</button></div>`;
+      const fc = favorCost(run, a.id);
+      return `<div class="item" data-ab="${a.id}" style="${why ? 'opacity:.6' : ''}">${icon(d.icon, 36)}<div class="nm">${esc(d.name)} <span class="sub">${a.rank > 1 ? 'rank ' + a.rank : ''}</span><div class="sub">${[fc ? fc + ' favour' : c.mp ? c.mp + ' MP' : '', c.cooldown ? c.cooldown + 't cooldown' : '', d.range ? 'range ' + d.range : 'self', p.cooldowns[a.id] ? `<b style="color:var(--warn)">${p.cooldowns[a.id]} turns</b>` : ''].filter(Boolean).join(' · ')}</div><div class="sub">${esc(d.desc)}</div></div><button class="btn small" data-pin="${a.id}">${inQ ? '★' : '☆'}</button></div>`;
     }).join('');
   };
   const pnl = openPanel(ui.root, 'Abilities', render());
@@ -313,6 +317,7 @@ export function examine(ui: GameUI, cell: Pos) {
   if (f?.kind === 'trap') parts.push(`<p class="m-warn">A ${esc(f.id)} trap.</p>`);
   if (f?.kind === 'chest' && !f.used) parts.push('<p>A sturdy box. Probably full of treasure. Probably.</p>');
   if (f?.kind === 'shop') parts.push(`<p>${esc(String(f.data?.name ?? 'A shop'))}.</p>`);
+  if (f?.kind === 'altar') parts.push(`<p><b>An altar of ${esc(PATRONS[f.id].name)}</b>. ${esc(PATRONS[f.id].desc)}</p>`);
   if (f?.kind === 'shrine') parts.push(`<p><b>${esc(SHRINES[f.id].name)}</b>. ${esc(SHRINES[f.id].desc)}${f.used ? ' It is quiet now.' : ''}</p>`);
   const t = l.tiles[i];
   parts.push(`<p class="m-dim">${esc(TERRAIN[t].name.charAt(0).toUpperCase() + TERRAIN[t].name.slice(1))}. ${esc(TERRAIN[t].desc)}${vis ? '' : ' (remembered)'}</p>`);
@@ -345,6 +350,19 @@ export function shrine(ui: GameUI, id: string, next?: Next) {
   const s = SHRINES[id];
   const pnl = openPanel(ui.root, esc(s.name), `<div style="text-align:center">${icon(s.tile, 64)}</div><p class="story">${esc(s.desc)}</p><p><b style="color:var(--gold)">The offer:</b> ${esc(s.offer)}</p><div class="btnrow"><button class="btn primary" data-yes>Accept</button><button class="btn" data-close>Walk away</button></div>`, { center: true, onClose: next });
   pnl.body.querySelector('[data-yes]')!.addEventListener('click', () => { pnl.close(); ui.doAct({ t: 'shrine' }); });
+}
+
+export function patron(ui: GameUI, id: string, next?: Next) {
+  const pat = PATRONS[id];
+  const cur0 = ui.run.player.piety && PATRONS[ui.run.player.piety.god];
+  const powers = pat.powers.map((pw) => `<div class="item" style="cursor:default">${icon(ABILITIES[pw.ability].icon, 28)}<div class="nm">${esc(ABILITIES[pw.ability].name)}<div class="sub">${esc(ABILITIES[pw.ability].desc)} (at ${pw.favor} favour, costs ${pw.cost})</div></div></div>`).join('');
+  const pnl = openPanel(ui.root, esc(pat.name), `<div style="text-align:center">${icon(pat.altar, 64)}</div>
+    <p class="story">${esc(pat.desc)}</p><p class="m-speech">${esc(pat.pitch)}</p>
+    <p><b style="color:var(--gold)">Blessing:</b> ${esc(pat.passiveText)}</p><p><b style="color:var(--gold)">Favour from:</b> ${esc(pat.likes)}</p>
+    <div class="list-h">Powers</div>${powers}
+    ${cur0 ? `<p class="m-warn">You already serve ${esc(cur0.name)}. They will not take kindly to being abandoned.</p>` : ''}
+    <div class="btnrow"><button class="btn primary" data-yes>Kneel</button><button class="btn" data-close>Not today</button></div>`, { center: true, onClose: next });
+  pnl.body.querySelector('[data-yes]')!.addEventListener('click', () => { pnl.close(); ui.doAct({ t: 'worship', id }); });
 }
 
 export function baker(ui: GameUI, next?: Next) {

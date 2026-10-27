@@ -8,7 +8,9 @@ export const atlas = { img: null as HTMLImageElement | null, w: 1024, h: 1024, u
 export function loadAtlas(): Promise<void> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    atlas.url = new URL('atlas.png', document.baseURI).href;
+    let h = 0;
+    for (const c of JSON.stringify(MAP)) h = (h * 31 + c.charCodeAt(0)) | 0;
+    atlas.url = new URL(`atlas.png?v=${(h >>> 0).toString(36)}`, document.baseURI).href; // busts the offline cache when the atlas changes
     img.onload = () => {
       atlas.img = img; atlas.w = img.naturalWidth; atlas.h = img.naturalHeight;
       document.documentElement.style.setProperty('--atlas', `url(${atlas.url})`);

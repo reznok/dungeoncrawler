@@ -2,6 +2,7 @@ import type { Attr, Run } from '../core/types';
 import { TALENTS, TIER_REQ, type TalentDef } from '../data/talents';
 import { MUTATIONS, MUTATION_SLOTS } from '../data/mutations';
 import { ABILITIES } from '../data/abilities';
+import { PATRONS, MAX_FAVOR } from '../data/patrons';
 import { msg, rng } from './state';
 import { playerStats, xpForLevel, callingOf, ancestryOf } from './stats';
 import { pushFx } from './fx';
@@ -119,7 +120,32 @@ export function playerAbilities(run: Run): { id: string; rank: number; source: s
     if (!it) continue;
     if (it.base === 'a_rage') add('berserk', 1, 'amulet');
   }
+  const pat = p.piety && PATRONS[p.piety.god];
+  if (pat) for (const pw of pat.powers) if (p.piety!.favor >= pw.favor || p.piety!.unlocked?.includes(pw.ability)) add(pw.ability, 1 + Math.floor(p.piety!.favor / 60), pat.name);
   return [...out.values()];
+}
+
+/** Favour cost of a patron power, or 0 if the ability is not one. */
+export function favorCost(run: Run, id: string): number {
+  const p = run.player;
+  const pat = p.piety && PATRONS[p.piety.god];
+  return pat?.powers.find((pw) => pw.ability === id)?.cost ?? 0;
+}
+
+export function gainFavor(run: Run, n: number, why?: string) {
+  const p = run.player;
+  if (!p.piety || n === 0) return;
+  const before = p.piety.favor;
+  p.piety.favor = Math.max(0, Math.min(MAX_FAVOR, p.piety.favor + n));
+  const pat = PATRONS[p.piety.god];
+  for (const pw of pat.powers) {
+    if (before < pw.favor && p.piety.favor >= pw.favor && !p.piety.unlocked?.includes(pw.ability)) {
+      (p.piety.unlocked ??= []).push(pw.ability);
+      msg(run, `${pat.name} grants you a new power: ${ABILITIES[pw.ability].name}!`, 'good');
+      autoQuickSlot(run, 'a:' + pw.ability);
+    }
+  }
+  if (why) msg(run, why, n > 0 ? 'good' : 'bad');
 }
 
 export function gainMutation(run: Run, family?: string): string | null {

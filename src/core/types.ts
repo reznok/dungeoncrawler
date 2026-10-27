@@ -87,7 +87,7 @@ export interface Item {
 
 export interface FloorItem { x: number; y: number; item: Item; seen?: boolean }
 
-export type FeatureKind = 'trap' | 'shop' | 'shrine' | 'fountain' | 'note' | 'npc' | 'event' | 'chest';
+export type FeatureKind = 'trap' | 'shop' | 'shrine' | 'fountain' | 'note' | 'npc' | 'event' | 'chest' | 'altar';
 export interface Feature {
   kind: FeatureKind;
   x: number; y: number;
@@ -142,6 +142,7 @@ export interface Player extends ActorBase {
   bonusHp: number; // permanent max HP changes from events
   usedUnbreakable?: number; // depth where Unbreakable last fired
   shieldReadyTurn?: number;
+  piety?: { god: string; favor: number; unlocked?: string[] };
 }
 
 export interface Msg { text: string; cls?: string; turn: number }
