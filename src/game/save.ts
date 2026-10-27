@@ -53,9 +53,17 @@ export function recordRun(e: HallEntry) {
   try { store()?.setItem(HALL, JSON.stringify(list.slice(0, 30))); } catch { /* ignore */ }
 }
 
-export interface Settings { zoom: number; autoPickup: boolean; confirmStairs: boolean; seenIntro: boolean }
+export interface Settings {
+  zoom: number; autoPickup: boolean; confirmStairs: boolean; seenIntro: boolean;
+  /** Tapping a targeted ability fires at its default target at once instead of arming it. */
+  quickCast: boolean;
+  haptics: boolean;
+  /** Auto-explore also picks up weapons, armour and jewellery it walks onto. */
+  autoPickupGear: boolean;
+  seenQuickHint: boolean;
+}
 export function loadSettings(): Settings {
-  const d: Settings = { zoom: 1, autoPickup: true, confirmStairs: false, seenIntro: false };
+  const d: Settings = { zoom: 1, autoPickup: true, confirmStairs: false, seenIntro: false, quickCast: false, haptics: true, autoPickupGear: true, seenQuickHint: false };
   try { return { ...d, ...JSON.parse(store()?.getItem(SETTINGS) ?? '{}') }; } catch { return d; }
 }
 export function saveSettings(s: Settings) { try { store()?.setItem(SETTINGS, JSON.stringify(s)); } catch { /* ignore */ } }

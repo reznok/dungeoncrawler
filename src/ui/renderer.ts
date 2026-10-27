@@ -57,6 +57,10 @@ export class Renderer {
   cursor: Pos | null = null;
   path: Pos[] = [];
   shake = 0;
+  /** Camera centre (in cells, may be fractional) instead of the player, e.g. to keep a far target on screen. */
+  focus: Pos | null = null;
+  /** While targeting: tiles beyond `r` (Chebyshev) from the player are dimmed and `foes` get a gold outline. */
+  range: { r: number; foes: Pos[] } | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -92,6 +96,11 @@ export class Renderer {
     this.live = this.live.filter((l) => now - l.start < l.dur);
   }
 
+  /** Whole cells visible from the centre to each edge, minus a margin: how far a cell may sit from the camera and still be fully on screen. */
+  halfView(): { w: number; h: number } {
+    return { w: this.canvas.width / this.ts / 2 - 1, h: this.canvas.height / this.ts / 2 - 1 };
+  }
+
   /** Map cell under a client point. */
   cellAt(run: Run, clientX: number, clientY: number): Pos {
     const r = this.canvas.getBoundingClientRect();
@@ -110,8 +119,9 @@ export class Renderer {
     this.pullFx(now, run.depth);
     let sx = 0, sy = 0;
     if (this.shake > now) { sx = (Math.random() - 0.5) * ts * 0.2; sy = (Math.random() - 0.5) * ts * 0.2; }
-    this.ox = Math.round(this.canvas.width / 2 - (p.x + 0.5) * ts + sx);
-    this.oy = Math.round(this.canvas.height / 2 - (p.y + 0.5) * ts + sy);
+    const cam = this.focus ?? p;
+    this.ox = Math.round(this.canvas.width / 2 - (cam.x + 0.5) * ts + sx);
+    this.oy = Math.round(this.canvas.height / 2 - (cam.y + 0.5) * ts + sy);
     const x0 = Math.max(0, Math.floor(-this.ox / ts)), y0 = Math.max(0, Math.floor(-this.oy / ts));
     const x1 = Math.min(l.w - 1, Math.ceil((this.canvas.width - this.ox) / ts)), y1 = Math.min(l.h - 1, Math.ceil((this.canvas.height - this.oy) / ts));
     const theme = THEMES[l.theme] ?? THEMES.cellar;
@@ -163,6 +173,18 @@ export class Renderer {
       if (m.hp <= 0 || !vis.has(m.y * l.w + m.x)) continue;
       if (m.statuses.invisible && !s.flags.has('see_invis') && !m.ally) continue;
       this.drawMonster(run, m, ts);
+    }
+    // targeting: dim everything outside the range square, outline the hostiles that can be targeted
+    if (this.range) {
+      const r = this.range.r;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.beginPath();
+      ctx.rect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.rect(this.ox + (p.x - r) * ts, this.oy + (p.y - r) * ts, (2 * r + 1) * ts, (2 * r + 1) * ts);
+      ctx.fill('evenodd');
+      ctx.strokeStyle = '#f2c35b';
+      ctx.lineWidth = Math.max(1, ts / 20);
+      for (const f of this.range.foes) ctx.strokeRect(this.ox + f.x * ts + 1.5, this.oy + f.y * ts + 1.5, ts - 3, ts - 3);
     }
     // player
     const px = this.ox + p.x * ts, py = this.oy + p.y * ts;

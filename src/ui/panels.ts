@@ -99,7 +99,17 @@ export function inventory(ui: GameUI) {
     const groups: Record<string, Item[]> = {};
     const order = ['weapon', 'armour', 'ring', 'amulet', 'potion', 'scroll', 'wand', 'essence', 'tome', 'note'];
     for (const it of p.inventory) (groups[it.kind] ??= []).push(it);
-    let html = `<div class="list-h">Equipped · ${p.gold} gold</div>`;
+    // everything seen and left lying on this floor, nearest first, with a way back to it
+    const left = cur(run).items.filter((fi) => fi.seen).sort((a, b) => dist(a, p) - dist(b, p));
+    let html = '';
+    if (left.length) {
+      html += `<div class="list-h">Items here · this floor (${left.length})</div>`;
+      html += left.map((fi) => {
+        const d = dist(fi, p);
+        return `<div class="item floor">${icon(itemTile(run, fi.item), 34, fi.item.id)}<div class="nm">${esc(itemName(run, fi.item))}<div class="sub">${d ? `${d} tile${d === 1 ? '' : 's'} away` : 'under you'}</div></div>${d ? `<button class="btn go" data-go="${fi.x},${fi.y}">Go</button>` : '<button class="btn go" data-pick>Pick up</button>'}</div>`;
+      }).join('');
+    }
+    html += `<div class="list-h">Equipped · ${p.gold} gold</div>`;
     html += worn.length ? worn.map(([s, it]) => row(it, s)).join('') : '<div class="m-dim">Nothing. Bold.</div>';
     html += `<div class="list-h">Pack (${p.inventory.length}/26)</div>`;
     for (const k of order) if (groups[k]) html += groups[k].map((it) => row(it)).join('');
@@ -109,7 +119,11 @@ export function inventory(ui: GameUI) {
   const row = (it: Item, slot?: string) => `<div class="item" data-id="${it.id}">${icon(itemTile(run, it), 34, it.id)}<div class="nm">${esc(itemName(run, it))}${slot ? ` <span class="eq">${slot.replace(/\d/, '')}</span>` : ''}</div></div>`;
   const pnl = openPanel(ui.root, 'Bag', render());
   pnl.body.addEventListener('click', (e) => {
-    const id = (e.target as HTMLElement).closest('[data-id]')?.getAttribute('data-id');
+    const t = e.target as HTMLElement;
+    const go = t.closest('[data-go]')?.getAttribute('data-go');
+    if (go) { const [x, y] = go.split(',').map(Number); pnl.close(); ui.travelTo({ x, y }); return; }
+    if (t.closest('[data-pick]')) { ui.doAct({ t: 'pickup' }); pnl.body.innerHTML = render(); return; }
+    const id = t.closest('[data-id]')?.getAttribute('data-id');
     if (!id) return;
     const it = [...p.inventory, ...Object.values(p.equip)].find((x) => x?.id === +id);
     if (it) itemDetail(ui, it, () => { pnl.body.innerHTML = render(); });
@@ -135,7 +149,12 @@ export function itemDetail(ui: GameUI, it: Item, onChange?: () => void) {
     if (!d) return;
     if (d === 'equip') { ui.doAct({ t: 'equip', itemId: it.id }); pnl.close(); onChange?.(); }
     if (d === 'remove' && slot) { ui.doAct({ t: 'unequip', slot }); pnl.close(); onChange?.(); }
-    if (d === 'drop') { ui.doAct({ t: 'drop', itemId: it.id }); pnl.close(); onChange?.(); }
+    if (d === 'drop') {
+      ui.doAct({ t: 'drop', itemId: it.id });
+      // mark it as already visited so auto-explore neither walks back to it nor picks it up again
+      for (const fi of cur(run).items) if (fi.item === it) (fi as { visited?: boolean }).visited = true;
+      pnl.close(); onChange?.();
+    }
     if (d === 'quick') { const i = p.quick.indexOf(null); p.quick[i >= 0 ? i : p.quick.length - 1] = 'i:' + it.base; ui.refresh(); toast(ui.root, 'Added to quick bar'); }
     if (d === 'use') {
       pnl.close();
@@ -154,12 +173,15 @@ export function useItem(ui: GameUI, it: Item) {
     const def = CONSUMABLES[it.base];
     const a = ABILITIES[def.ability ?? ''];
     const range = a?.range ?? 7;
-    const initial = (() => { const ms = cur(run).monsters.filter((m) => !m.ally && !m.friendly && isVisible(run, m.x, m.y) && dist(m, p) <= range); ms.sort((x, y) => dist(x, p) - dist(y, p)); return ms[0] ? { x: ms[0].x, y: ms[0].y } : null; })();
-    ui.startTarget({ label: 'Zap ' + itemName(run, it), range, initial, onPick: (pos) => ui.doAct({ t: 'use', itemId: it.id, target: pos }) });
+    ui.startTarget({
+      label: 'Zap ' + itemName(run, it), range, initial: null, key: 'i:' + it.base, icon: itemTile(run, it), tile: a?.target === 'tile',
+      cost: isKnown(run, it.base) && it.charges !== undefined ? `${it.charges} charge${it.charges === 1 ? '' : 's'}` : '',
+      onPick: (pos) => ui.doAct({ t: 'use', itemId: it.id, target: pos }),
+    });
     return;
   }
   if (it.kind === 'scroll' && it.base === 's_blink' && isKnown(run, it.base)) {
-    ui.startTarget({ label: 'Blink where?', range: 7, initial: null, onPick: (pos) => ui.doAct({ t: 'use', itemId: it.id, target: pos }) });
+    ui.startTarget({ label: 'Blink where?', range: 7, initial: null, key: 'i:' + it.base, icon: itemTile(run, it), tile: true, foes: false, onPick: (pos) => ui.doAct({ t: 'use', itemId: it.id, target: pos }) });
     return;
   }
   if (it.kind === 'scroll' && it.base === 's_identify' && isKnown(run, it.base)) {
@@ -176,7 +198,7 @@ export function useItem(ui: GameUI, it: Item) {
     }
   }
   if (it.kind === 'scroll' && it.base === 's_blink') {
-    ui.startTarget({ label: 'Read the scroll... at where?', range: 7, initial: null, onPick: (pos) => ui.doAct({ t: 'use', itemId: it.id, target: pos }) });
+    ui.startTarget({ label: 'Read the scroll... at where?', range: 7, initial: null, key: 'i:' + it.base, icon: itemTile(run, it), tile: true, foes: false, onPick: (pos) => ui.doAct({ t: 'use', itemId: it.id, target: pos }) });
     return;
   }
   ui.doAct({ t: 'use', itemId: it.id, target: { x: p.x, y: p.y } });
@@ -234,6 +256,11 @@ export function levelUp(ui: GameUI, next?: Next) {
   const run = ui.run;
   const p = run.player;
   if (p.pendingTalents <= 0 && p.attrPoints <= 0) { next?.(); return; }
+  // A talent card only selects; the Learn button in the bottom bar commits, so a mis-tap is not permanent. Learn only
+  // appears once a card is selected and ignores taps for a moment after that, so a mashing thumb needs two separate
+  // deliberate taps (plus the popup shield when the game opened this sheet) to learn anything.
+  let sel: string | null = null;
+  let selAt = 0;
   const render = () => {
     let html = '';
     if (p.attrPoints > 0) {
@@ -250,23 +277,50 @@ export function levelUp(ui: GameUI, next?: Next) {
         const r = (p.talents[id] ?? 0) + 1;
         const ab = t.ability ? ABILITIES[t.ability] : null;
         const cost = ab ? [ab.mp ? `${ab.mp} MP` : '', ab.cooldown ? `${ab.cooldown}-turn cooldown` : ''].filter(Boolean).join(', ') : '';
-        html += `<div class="talent" data-t="${id}">${icon(ab?.icon ?? DISCIPLINES[t.disc].icon, 40)}<div style="flex:1"><div class="tn">${esc(t.name)}${t.max > 1 ? ` ${'★'.repeat(r)}${'☆'.repeat(t.max - r)}` : ''}</div><div class="tm">${esc(DISCIPLINES[t.disc].name)} · tier ${t.tier}${r > 1 ? ' · rank up' : ' · new'}${cost ? ' · ' + cost : ''}</div><div class="td">${esc(t.desc(r))}</div>${ab && !t.desc(r).includes(ab.desc) ? `<div class="tm">${esc(ab.desc)}</div>` : ''}</div></div>`;
+        html += `<div class="talent${id === sel ? ' sel' : ''}" data-t="${id}">${icon(ab?.icon ?? DISCIPLINES[t.disc].icon, 40)}<div style="flex:1"><div class="tn">${esc(t.name)}${t.max > 1 ? ` ${'★'.repeat(r)}${'☆'.repeat(t.max - r)}` : ''}</div><div class="tm">${esc(DISCIPLINES[t.disc].name)} · tier ${t.tier}${r > 1 ? ' · rank up' : ' · new'}${cost ? ' · ' + cost : ''}</div><div class="td">${esc(t.desc(r))}</div>${ab && !t.desc(r).includes(ab.desc) ? `<div class="tm">${esc(ab.desc)}</div>` : ''}</div></div>`;
       }
     }
     return html;
   };
-  const pnl = openPanel(ui.root, p.pendingTalents ? 'Level up!' : 'Attributes', render(), { onClose: () => { ui.refresh(); next?.(); } });
+  const pnl = openPanel(ui.root, p.pendingTalents ? 'Level up!' : 'Attributes', render(), {
+    onClose: () => { ui.refresh(); next?.(); },
+    foot: p.pendingTalents > 0 ? '<button class="btn primary learn" data-learn style="display:none">Learn</button>' : '',
+  });
+  const learn = pnl.el.querySelector('[data-learn]') as HTMLButtonElement | null;
+  const syncLearn = () => {
+    if (!learn) return;
+    learn.style.display = sel && p.pendingTalents > 0 ? '' : 'none';
+    if (sel) learn.textContent = `Learn ${TALENTS[sel].name}`;
+  };
+  const update = () => {
+    if (p.pendingTalents <= 0 && p.attrPoints <= 0) { pnl.close(); return; }
+    pnl.body.innerHTML = render();
+    syncLearn();
+  };
   pnl.body.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
     const a = t.closest('[data-attr]')?.getAttribute('data-attr') as Attr | undefined;
     const tid = t.closest('[data-t]')?.getAttribute('data-t');
-    if (a) spendAttr(run, a);
-    if (tid) takeTalent(run, tid);
-    if (!a && !tid) return;
+    if (tid) {
+      sel = tid === sel ? null : tid;
+      selAt = performance.now();
+      pnl.body.querySelectorAll('[data-t]').forEach((c) => c.classList.toggle('sel', c.getAttribute('data-t') === sel));
+      syncLearn();
+      return;
+    }
+    if (!a) return;
+    spendAttr(run, a);
     saveRun(run);
     ui.refresh();
-    if (p.pendingTalents <= 0 && p.attrPoints <= 0) pnl.close();
-    else pnl.body.innerHTML = render();
+    update();
+  });
+  learn?.addEventListener('click', () => {
+    if (!sel || performance.now() - selAt < 400) return;
+    takeTalent(run, sel);
+    sel = null;
+    saveRun(run);
+    ui.refresh();
+    update();
   });
 }
 
@@ -454,9 +508,11 @@ export function help(ui: GameUI) {
     <p><b>Swipe</b> anywhere on the map to take one step in that direction.</p>
     <p><b>Hold</b> a square to look at what is there.</p>
     <p><b>Pinch</b> to zoom.</p>
-    <p><b>Explore</b> walks around automatically until something interesting happens. <b>Fight</b> attacks the nearest enemy. <b>Rest</b> waits until you are healed. <b>Stairs</b> walks to the nearest way down.</p>
+    <p><b>Explore</b> walks around automatically until something interesting happens, picking up what it finds. <b>Fight</b> attacks the nearest enemy. <b>Rest</b> waits until you are healed. <b>Stairs</b> walks to the nearest way down.</p>
     <p>The <b>quick bar</b> holds abilities and items. Tap an empty slot (or hold a full one) to change it.</p>
-    <p>When you level up, tap <b>LEVEL UP</b> to pick a new talent. Your build is yours to make.</p>
+    <p><b>Tap an ability</b> to arm it, tap it again to fire at the marked enemy, or tap any enemy on the map. Swipe left/right to change target. Tap yourself or ✕ to cancel.</p>
+    <p>Things you left behind are listed at the top of the <b>Bag</b>, with a <b>Go</b> button to walk back to them.</p>
+    <p>When you level up, tap <b>LEVEL UP</b>, pick a talent and tap <b>Learn</b>. Your build is yours to make.</p>
     <p>Potions, scrolls, wands and jewellery are <b>unidentified</b> until you try them. Living dangerously is part of it.</p>
     <p>Death is permanent. Your game saves automatically after every move; close the tab whenever you like.</p>
     <p class="m-dim">Keyboard: arrows / hjklyubn to move, o explore, Tab fight, r rest, &gt; stairs, g pick up, i bag, a abilities, c character, m map, F1–F6 quick bar.</p>
@@ -465,12 +521,15 @@ export function help(ui: GameUI) {
 
 export function mainMenu(ui: GameUI) {
   const zoomNames = ['Far', 'Normal', 'Close'];
+  type Flag = 'quickCast' | 'haptics' | 'autoPickupGear';
+  const toggle = (k: Flag, label: string) => `<button class="btn toggle${ui.settings[k] ? ' on' : ''}" data-m="set" data-k="${k}">${label}<span>${ui.settings[k] ? 'On' : 'Off'}</span></button>`;
   const pnl = openPanel(ui.root, 'Menu', `<div class="menu-col" style="max-width:none">
     <button class="btn" data-m="char">${icon('gui/commands/status', 24)} Character</button>
     <button class="btn" data-m="abil">${icon('gui/commands/ability', 24)} Abilities</button>
     <button class="btn" data-m="log">${icon('gui/commands/message_history', 24)} Messages</button>
     <button class="btn" data-m="map">${icon('gui/commands/display_map', 24)} Map</button>
     <button class="btn" data-m="zoom">Zoom: ${zoomNames[ui.settings.zoom] ?? 'Normal'}</button>
+    ${toggle('quickCast', 'Quick cast')}${toggle('haptics', 'Vibration')}${toggle('autoPickupGear', 'Explore picks up gear')}
     <button class="btn" data-m="help">${icon('gui/commands/help', 24)} How to play</button>
     <button class="btn" data-m="quit">Save &amp; quit to title</button>
     <button class="btn danger" data-m="abandon">Abandon this run</button></div>`);
@@ -482,6 +541,16 @@ export function mainMenu(ui: GameUI) {
       saveSettings(ui.settings);
       ui.renderer.setZoom(ZOOM_CELLS[ui.settings.zoom] ?? 13);
       (e.target as HTMLElement).closest('[data-m]')!.textContent = `Zoom: ${zoomNames[ui.settings.zoom]}`;
+      return;
+    }
+    if (m === 'set') {
+      const b = (e.target as HTMLElement).closest('[data-k]')!;
+      const k = b.getAttribute('data-k') as Flag;
+      ui.settings[k] = !ui.settings[k];
+      saveSettings(ui.settings);
+      b.classList.toggle('on', ui.settings[k]);
+      b.querySelector('span')!.textContent = ui.settings[k] ? 'On' : 'Off';
+      if (k === 'haptics' && ui.settings.haptics) ui.buzz(30);
       return;
     }
     pnl.close();

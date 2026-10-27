@@ -75,14 +75,21 @@ export function exploreStep(run: Run): Action | string {
   }
   for (const f of l.features) if (f.kind === 'chest' && !f.used && l.seen[f.y * l.w + f.x] && !(f.x === p.x && f.y === p.y)) targets.push({ x: f.x, y: f.y });
   for (const fi of l.items) if (fi.x === p.x && fi.y === p.y) (fi as { visited?: boolean }).visited = true;
-  if (!targets.length) return 'Done exploring. Tap the stairs button to head down.';
+  if (!targets.length) return doneMsg(run, 'Tap the stairs button to head down.');
   let traps = false;
   let d = distanceMap(l.w, l.h, targets, (x, y) => knownPassable(run, x, y) || (x === p.x && y === p.y));
   if (d[p.y * l.w + p.x] >= UNREACHED) { traps = true; d = distanceMap(l.w, l.h, targets, (x, y) => knownPassable(run, x, y, true) || (x === p.x && y === p.y)); }
   if (d[p.y * l.w + p.x] >= UNREACHED) return 'Nothing more you can reach.';
   const next = downhill(l.w, l.h, d, p, (x, y) => knownPassable(run, x, y, traps));
-  if (!next) return 'Done exploring.';
+  if (!next) return doneMsg(run, '');
   return stepTo(run, next);
+}
+
+/** "Done exploring." plus how many seen items were left lying on this floor. */
+function doneMsg(run: Run, tail: string): string {
+  const n = cur(run).items.filter((fi) => fi.seen).length;
+  if (!n) return tail ? `Done exploring. ${tail}` : 'Done exploring.';
+  return `Done exploring. ${n} item${n > 1 ? 's' : ''} left on this floor (see Bag).`;
 }
 
 export function stairsStep(run: Run): Action | string {

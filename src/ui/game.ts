@@ -8,7 +8,7 @@ import { act, popups, canFireAt, type Action } from '../game/turn';
 import { exploreStep, fightStep, restStep, stairsStep, travelStep, enemiesInView, hostileAt } from '../game/explore';
 import { actorAt, cur, isVisible, msg, view } from '../game/state';
 import { playerStats, xpForLevel } from '../game/stats';
-import { abilityCost, canUseAbility, defaultTarget } from '../game/abilities';
+import { abilityCost, canUseAbility, los } from '../game/abilities';
 import { itemTile, itemName } from '../game/items';
 import { playerAbilities, favorCost } from '../game/progression';
 import { saveRun, loadSettings, saveSettings } from '../game/save';
@@ -16,12 +16,20 @@ import { findPath } from '../world/path';
 import { Renderer, ZOOM_CELLS } from './renderer';
 import { MONSTERS } from '../data/monsters';
 import { threat } from '../game/combat';
-import { el, esc, toast } from './dom';
+import { el, esc, toast, panelDefaults, sinceOverlayClose } from './dom';
 import { icon } from './tiles';
 import * as P from './panels';
 
 type Auto = null | { kind: 'explore' | 'rest' | 'fight' | 'stairs' | 'travel'; dest?: Pos; steps: number; target?: Monster; known?: Set<number> };
-export interface Targeting { label: string; range: number; self?: boolean; onPick: (p: Pos) => void; initial: Pos | null }
+/**
+ * A pending targeted action. `key` is the quick-bar key ('a:<ability>' / 'i:<itemBase>') that arms it: tapping that slot
+ * again fires. `tile`: any tile in range is a fair pick (fireball, blink). `foes: false`: hostiles are not suggested as
+ * targets (blink), `initial` is used instead. `ability`: re-checked (MP, cooldown) before firing. `cost`: shown in the strip.
+ */
+export interface Targeting {
+  label: string; range: number; self?: boolean; onPick: (p: Pos) => void; initial: Pos | null;
+  key?: string; tile?: boolean; foes?: boolean; ability?: string; cost?: string; icon?: string;
+}
 
 export class GameUI {
   run: Run;
@@ -36,8 +44,13 @@ export class GameUI {
   minimap!: HTMLCanvasElement;
   foesEl!: HTMLElement;
   mapBtn!: HTMLElement;
+  wrapEl!: HTMLElement;
   auto: Auto = null;
   targeting: Targeting | null = null;
+  /** The monster last aimed at; the default target while it stays valid (not saved). */
+  lastTargetId: number | null = null;
+  lastHp = 0;
+  lastLevel = 0;
   lastStep = 0;
   stepsSinceSave = 0;
   panelOpen = false;
@@ -51,6 +64,8 @@ export class GameUI {
     this.root = root;
     this.run = run;
     this.onEnd = onEnd;
+    this.lastHp = run.player.hp;
+    this.lastLevel = run.player.level;
     this.build();
     this.renderer.setZoom(ZOOM_CELLS[this.settings.zoom] ?? 13);
     requestAnimationFrame((t) => this.frame(t));
@@ -61,6 +76,21 @@ export class GameUI {
     this.refresh();
     if (!this.settings.seenIntro) { this.settings.seenIntro = true; saveSettings(this.settings); P.help(this); }
     else this.showPopups();
+    setTimeout(this.quickHint, 800);
+  }
+
+  /** First run with the quick bar: say how to change a slot, once the screen is free of panels. */
+  quickHint = () => {
+    if (!this.alive || this.settings.seenQuickHint) return;
+    if (document.querySelector('.overlay')) { setTimeout(this.quickHint, 1000); return; }
+    this.settings.seenQuickHint = true;
+    saveSettings(this.settings);
+    toast(this.root, 'Hold a slot to change it', 3200, 'hint');
+  };
+
+  buzz(ms: number) {
+    if (!this.settings.haptics) return;
+    try { navigator.vibrate?.(ms); } catch { /* not supported */ }
   }
 
   destroy() {
@@ -79,7 +109,7 @@ export class GameUI {
     const r = this.root;
     r.innerHTML = '';
     this.hud = el('div'); this.hud.id = 'hud';
-    const wrap = el('div'); wrap.id = 'mapwrap';
+    const wrap = el('div'); wrap.id = 'mapwrap'; this.wrapEl = wrap;
     this.canvas = el('canvas'); this.canvas.id = 'map';
     this.logEl = el('div'); this.logEl.id = 'log';
     this.ctxEl = el('div'); this.ctxEl.id = 'ctx';
@@ -98,11 +128,15 @@ export class GameUI {
     r.append(this.hud, wrap, this.quickEl, actions);
     this.renderer = new Renderer(this.canvas);
     this.renderer.resize();
+    // a tap right after a sheet closes is the same mashing thumb: it must not fall through to Fight
+    const settled = () => sinceOverlayClose() > 250;
     actions.addEventListener('click', (e) => {
+      if (!settled()) return;
       const a = (e.target as HTMLElement).closest('[data-a]')?.getAttribute('data-a');
       if (a) this.onButton(a);
     });
     this.quickEl.addEventListener('click', (e) => {
+      if (!settled()) return;
       const q = (e.target as HTMLElement).closest('[data-q]');
       if (q) this.useQuick(+q.getAttribute('data-q')!);
     });
@@ -120,6 +154,7 @@ export class GameUI {
     histBtn.addEventListener('click', () => P.messageLog(this));
     this.mapBtn.addEventListener('click', () => this.toggleMinimap());
     this.ctxEl.addEventListener('click', (e) => {
+      if (!settled()) return;
       const b = (e.target as HTMLElement).closest('[data-c]')?.getAttribute('data-c');
       if (b === 'pickup') this.doAct({ t: 'pickup' });
       if (b === 'stairs') this.doAct({ t: 'stairs' });
@@ -127,13 +162,20 @@ export class GameUI {
       if (b === 'altar') { const f = cur(this.run).features.find((x) => x.kind === 'altar' && x.x === this.run.player.x && x.y === this.run.player.y); if (f) P.patron(this, f.id); }
       if (b === 'shrine') { const f = cur(this.run).features.find((x) => x.kind === 'shrine' && x.x === this.run.player.x && x.y === this.run.player.y); if (f) P.shrine(this, f.id); }
     });
-    this.bannerEl.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-cancel]')) this.cancelTarget(); });
+    this.bannerEl.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('[data-cancel]')) this.cancelTarget();
+      else if (t.closest('[data-fire]')) this.fireTarget();
+    });
     this.minimap.addEventListener('click', () => { if (this.showMinimap) this.toggleMinimap(); });
     this.foesEl.addEventListener('click', (e) => {
       const f = (e.target as HTMLElement).closest('[data-foe]')?.getAttribute('data-foe');
       if (!f) return;
       const [x, y] = f.split(',').map(Number);
-      P.examine(this, { x, y });
+      if (!this.targeting) { P.examine(this, { x, y }); return; }
+      const m = this.targetFoes().find((o) => o.x === x && o.y === y);
+      if (m) this.setTarget(m);
+      else toast(this.root, dist({ x, y }, this.run.player) > this.targeting.range ? 'Out of range' : 'Not in sight');
     });
     this.bindCanvas();
   }
@@ -201,17 +243,21 @@ export class GameUI {
       const d = Math.hypot(dx, dy);
       const s0 = start;
       start = null;
+      if (d > 26 && this.targeting) {
+        // while aiming, a sideways swipe changes the target instead of moving
+        if (Math.abs(dx) > Math.abs(dy)) this.cycleTarget(dx > 0 ? 1 : -1);
+        return;
+      }
       if (d > 26) {
         const ang = Math.atan2(dy, dx);
         const oct = Math.round(ang / (Math.PI / 4));
         const dirs = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
         const [mx, my] = dirs[(oct + 8) % 8];
         this.stopAuto();
-        if (this.targeting) return;
         this.doAct({ t: 'move', dx: mx, dy: my });
         return;
       }
-      this.onTap(this.renderer.cellAt(this.run, s0.x, s0.y));
+      if (sinceOverlayClose() > 250) this.onTap(this.renderer.cellAt(this.run, s0.x, s0.y));
     };
     c.addEventListener('pointerup', end);
     c.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); start = null; pinch = null; clearTimeout(longTimer); });
@@ -225,10 +271,10 @@ export class GameUI {
     if (this.auto) { this.stopAuto(); return; }
     if (this.targeting) {
       const tg = this.targeting;
-      if (tg.self) { this.cancelTarget(); tg.onPick(p); return; }
+      if (tg.self) { this.pick(p); return; }
+      if (cell.x === p.x && cell.y === p.y) { this.cancelTarget(); return; }
       if (dist(cell, p) > tg.range) { toast(this.root, 'Out of range'); return; }
-      this.cancelTarget();
-      tg.onPick(cell);
+      this.pick(cell);
       return;
     }
     if (cell.x < 0 || cell.y < 0 || cell.x >= l.w || cell.y >= l.h) return;
@@ -254,11 +300,17 @@ export class GameUI {
     if (dist(cell, p) === 1 && l.tiles[cell.y * l.w + cell.x] === T.FOUNTAIN) return this.doAct({ t: 'fountain', at: cell });
     if (dist(cell, p) === 1) return this.doAct({ t: 'move', dx: cell.x - p.x, dy: cell.y - p.y });
     if (!l.seen[cell.y * l.w + cell.x]) return;
-    // travel
-    const path = findPath(l.w, l.h, p, cell, (x, y) => !!l.seen[y * l.w + x] && (TERRAIN[l.tiles[y * l.w + x]].walk || l.tiles[y * l.w + x] === T.DOOR));
-    if (!path) { toast(this.root, 'No known path'); return; }
+    this.travelTo(cell);
+  }
+
+  /** Auto-travel to a known cell along remembered tiles. */
+  travelTo(cell: Pos): boolean {
+    const l = cur(this.run);
+    const path = findPath(l.w, l.h, this.run.player, cell, (x, y) => !!l.seen[y * l.w + x] && (TERRAIN[l.tiles[y * l.w + x]].walk || l.tiles[y * l.w + x] === T.DOOR));
+    if (!path) { toast(this.root, 'No known path'); return false; }
     this.renderer.path = path;
     this.startAuto('travel', cell);
+    return true;
   }
 
   onKey = (e: KeyboardEvent) => {
@@ -269,7 +321,9 @@ export class GameUI {
       '8': [0, -1], '2': [0, 1], '4': [-1, 0], '6': [1, 0], '7': [-1, -1], '9': [1, -1], '1': [-1, 1], '3': [1, 1],
     };
     if (this.targeting && k === 'Escape') { this.cancelTarget(); return; }
-    if (this.targeting && (k === 'Enter' || k === 'f')) { if (this.renderer.cursor) this.onTap(this.renderer.cursor); return; }
+    if (this.targeting && (k === 'Enter' || k === 'f')) { this.fireTarget(); return; }
+    if (this.targeting && k === 'Tab') { e.preventDefault(); this.cycleTarget(e.shiftKey ? -1 : 1); return; }
+    if (dirs[k] && this.targeting) this.cancelTarget();
     if (dirs[k]) { e.preventDefault(); this.stopAuto(); this.doAct({ t: 'move', dx: dirs[k][0], dy: dirs[k][1] }); return; }
     if (k === '.' || k === '5' || k === 's') return this.doAct({ t: 'wait' });
     if (k === 'o') return this.onButton('explore');
@@ -320,6 +374,12 @@ export class GameUI {
     const run = this.run;
     this.stepsSinceSave++;
     if (!this.auto || this.stepsSinceSave > 25) { saveRun(run); this.stepsSinceSave = 0; }
+    const p = run.player;
+    if (run.over === 'dead') this.buzz(80);
+    else if (p.level > this.lastLevel) this.buzz(30);
+    else if (p.hp < this.lastHp) this.buzz(12);
+    this.lastHp = p.hp;
+    this.lastLevel = p.level;
     this.refresh();
     if (run.over) {
       this.stopAuto();
@@ -335,6 +395,12 @@ export class GameUI {
     const pop = popups.shift();
     if (!pop) return;
     const next = () => setTimeout(() => this.showPopups(), 50);
+    // the game opened this, not the player: its sheet ignores taps for a moment (see openPanel's shield)
+    panelDefaults.shield = true;
+    try { this.openPopup(pop, next); } finally { panelDefaults.shield = false; }
+  }
+
+  private openPopup(pop: (typeof popups)[number], next: () => void) {
     switch (pop.type) {
       case 'note': P.note(this, pop.title, pop.text, next); break;
       case 'story': P.story(this, pop.title, pop.text, next); break;
@@ -349,6 +415,12 @@ export class GameUI {
 
   useQuick(i: number) {
     const key = this.run.player.quick[i];
+    const tg = this.targeting;
+    if (tg) {
+      // the armed slot fires; any other slot drops the aim and does its own thing
+      if (key && key === tg.key) { this.fireTarget(); return; }
+      this.cancelTarget();
+    }
     if (!key) { P.quickAssign(this, i); return; }
     if (key.startsWith('a:')) this.useAbility(key.slice(2));
     else {
@@ -364,26 +436,108 @@ export class GameUI {
     const a = ABILITIES[id];
     if (!a) return;
     if (a.target === 'self') { this.doAct({ t: 'ability', id, target: { x: this.run.player.x, y: this.run.player.y } }); return; }
+    const c = abilityCost(this.run, id), fc = favorCost(this.run, id);
     this.startTarget({
-      label: a.name, range: a.kind === 'strike' || a.kind === 'drain' ? 1 : a.range, initial: defaultTarget(this.run, id),
+      label: a.name, range: a.kind === 'strike' || a.kind === 'drain' ? 1 : a.range, initial: null,
+      key: 'a:' + id, ability: id, icon: a.icon, tile: a.target !== 'enemy',
+      // blinks go to empty spots; Shadow Step is the blink that strikes whoever is there
+      foes: (a.kind !== 'blink' && a.kind !== 'teleport') || id === 'shadowstep',
+      cost: fc ? `${fc} favour` : c.mp ? `${c.mp} MP` : '',
       onPick: (pos) => this.doAct({ t: 'ability', id, target: pos }),
     });
   }
 
+  /** Hostiles the armed action can hit: visible, in range and in line of sight, nearest first. */
+  targetFoes(): Monster[] {
+    const t = this.targeting, run = this.run, p = run.player;
+    if (!t || t.foes === false) return [];
+    return enemiesInView(run).filter((m) => dist(m, p) <= t.range && los(run, p, m)).sort((a, b) => dist(a, p) - dist(b, p) || a.id - b.id);
+  }
+
+  /** Arms a targeted action: the default target is the last monster aimed at if still valid, else the nearest. */
   startTarget(t: Targeting) {
     this.stopAuto();
     this.targeting = t;
-    this.renderer.cursor = t.initial;
-    const tip = t.initial ? 'Tap a target (or the marked one)' : 'Tap a target';
-    this.bannerEl.innerHTML = `<b>${esc(t.label)}</b><span style="color:var(--dim)">${tip}</span>${t.initial ? '<button class="btn small" data-fire>Fire</button>' : ''}<button class="btn small" data-cancel>✕</button>`;
-    this.bannerEl.style.display = 'flex';
-    this.bannerEl.querySelector('[data-fire]')?.addEventListener('click', () => { if (t.initial) { this.cancelTarget(); t.onPick(t.initial); } });
+    const foes = this.targetFoes();
+    const m = foes.find((o) => o.id === this.lastTargetId) ?? foes[0];
+    const target = t.foes === false ? t.initial : m ? { x: m.x, y: m.y } : null;
+    if (this.settings.quickCast && target && t.foes !== false && !(t.ability && canUseAbility(this.run, t.ability))) { this.pick(target); return; }
+    this.renderer.cursor = target;
+    this.refresh();
+  }
+
+  setTarget(m: Monster) {
+    this.renderer.cursor = { x: m.x, y: m.y };
+    this.lastTargetId = m.id;
+    this.refresh();
+  }
+
+  cycleTarget(dir: number) {
+    const foes = this.targetFoes();
+    if (!foes.length) { toast(this.root, 'No target in range'); return; }
+    const c = this.renderer.cursor;
+    const i = c ? foes.findIndex((m) => m.x === c.x && m.y === c.y) : -1;
+    this.setTarget(foes[i < 0 ? 0 : (i + dir + foes.length) % foes.length]);
+  }
+
+  /** Fires the armed action at `pos`, remembering the monster there as the next default target. */
+  pick(pos: Pos) {
+    const t = this.targeting;
+    if (!t) return;
+    const m = hostileAt(this.run, pos);
+    if (m) this.lastTargetId = m.id;
+    this.cancelTarget();
+    t.onPick(pos);
+  }
+
+  /** Fire button / second tap on the armed slot / Enter. */
+  fireTarget() {
+    const t = this.targeting, c = this.renderer.cursor;
+    if (!t) return;
+    const why = t.ability ? canUseAbility(this.run, t.ability) : null;
+    if (why) { toast(this.root, why, 1800); this.cancelTarget(); return; }
+    if (!c) { toast(this.root, t.tile ? 'Tap a tile in range' : 'No target in range'); return; }
+    this.pick(c);
   }
 
   cancelTarget() {
     this.targeting = null;
     this.renderer.cursor = null;
-    this.bannerEl.style.display = 'none';
+    this.refresh();
+  }
+
+  /** Targeting strip above the quick bar, range overlay and camera; called from refresh(). */
+  drawTarget() {
+    const t = this.targeting, r = this.renderer, run = this.run, p = run.player;
+    this.wrapEl.classList.toggle('tgt', !!t);
+    if (!t) { this.bannerEl.style.display = 'none'; r.range = null; r.focus = null; return; }
+    const foes = this.targetFoes();
+    r.range = { r: t.range, foes: foes.map((m) => ({ x: m.x, y: m.y })) };
+    const c = r.cursor;
+    const why = t.ability ? canUseAbility(run, t.ability) : null;
+    let what: string;
+    if (why) what = `<span class="m-warn">${esc(why)}</span>`;
+    else if (!c) what = t.foes === false ? `Tap a spot within ${t.range}` : t.tile ? 'No target in range · tap a tile' : 'No target in range';
+    else {
+      const m = actorAt(run, c.x, c.y);
+      const d = dist(c, p);
+      const nm = m && m !== p && isVisible(run, c.x, c.y) ? (m as Monster).name ?? MONSTERS[(m as Monster).def].name : 'that spot';
+      what = `→ ${esc(nm)} · ${d} tile${d === 1 ? '' : 's'}`;
+    }
+    const ico = t.icon ? icon(t.icon, 32) : '';
+    this.bannerEl.innerHTML = `${ico}<div class="tg-t"><div><b>${esc(t.label)}</b>${t.cost ? ` <span class="tg-c">${esc(t.cost)}</span>` : ''}</div><div class="tg-w">${what}</div></div>` +
+      `<button class="btn tg-b primary" data-fire ${c && !why ? '' : 'disabled'}>Fire</button><button class="btn tg-b" data-cancel aria-label="Cancel">✕</button>`;
+    this.bannerEl.style.display = 'flex';
+    // keep a far target on screen: centre between the two, never losing the player
+    r.focus = null;
+    if (c) {
+      const hv = r.halfView(), dx = c.x - p.x, dy = c.y - p.y;
+      const down = hv.h - 2; // the strip and log cover the bottom rows
+      if (Math.abs(dx) > hv.w || dy < -hv.h || dy > down) {
+        const cl = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+        r.focus = { x: p.x + cl(dx / 2, -hv.w, hv.w), y: p.y + cl(dy / 2, -down, hv.h) };
+      }
+    }
   }
 
   // ------------------------------------------------------------------ auto
@@ -442,7 +596,17 @@ export class GameUI {
     const interrupted = a.target ? enemiesInView(run).some((m) => m !== a.target && !a.known!.has(m.id)) : view.interrupt;
     if (!ok || interrupted || run.player.hp < hpBefore) { this.after(); this.stopAuto(); return; }
     if (a.kind === 'stairs' && step.t === 'stairs') { this.after(); this.stopAuto(); return; }
+    // gear is not auto-picked by the game; explore takes it with it (a full pack stops here with "Your pack is full.")
+    if (a.kind === 'explore' && this.settings.autoPickupGear && this.unvisitedItemsHere()) {
+      if (!act(run, { t: 'pickup' }) || view.interrupt || run.player.hp < hpBefore) { this.after(); this.stopAuto(); return; }
+    }
     this.after();
+  }
+
+  /** Items on the player's tile that explore has not already walked away from (so dropped junk is not picked up again). */
+  unvisitedItemsHere(): boolean {
+    const p = this.run.player;
+    return cur(this.run).items.some((fi) => fi.x === p.x && fi.y === p.y && !(fi as { visited?: boolean }).visited);
   }
 
   frame(now: number) {
@@ -483,6 +647,7 @@ export class GameUI {
     const msgs = run.messages.slice(-4);
     this.logEl.innerHTML = msgs.map((m, i) => `<div class="${m.cls ? 'm-' + m.cls : ''}${m.turn < run.turn - 1 && i < msgs.length - 2 ? ' old' : ''}">${esc(m.text)}</div>`).join('');
     // quick bar
+    const armed = this.targeting?.key;
     this.quickEl.innerHTML = p.quick.map((q, i) => {
       if (!q) return `<div class="qs empty" data-q="${i}">+</div>`;
       if (q.startsWith('a:')) {
@@ -493,21 +658,24 @@ export class GameUI {
         const c = abilityCost(run, id);
         const fc = favorCost(run, id);
         const short = fc ? (p.piety?.favor ?? 0) < fc : p.mp < c.mp;
-        return `<div class="qs${cd ? ' cd' : ''}${short ? ' nomp' : ''}" data-q="${i}" data-cd="${cd}">${icon(a.icon, 34)}${fc ? `<span class="qn" style="color:#fd6">${fc}</span>` : c.mp ? `<span class="qn" style="color:#9cf">${c.mp}</span>` : ''}</div>`;
+        return `<div class="qs${cd ? ' cd' : ''}${short ? ' nomp' : ''}${q === armed ? ' armed' : ''}" data-q="${i}" data-cd="${cd}">${icon(a.icon, 34)}${fc ? `<span class="qn" style="color:#fd6">${fc}</span>` : c.mp ? `<span class="qn" style="color:#9cf">${c.mp}</span>` : ''}</div>`;
       }
       const base = q.slice(2);
       const items = p.inventory.filter((x) => x.base === base);
       const n = items.reduce((a, b) => a + (b.kind === 'wand' ? b.charges ?? 0 : b.qty), 0);
       const it = items[0];
       const tile = it ? itemTile(run, it) : CONSUMABLES[base] ? 'item/potion/unknown' : 'item/misc/misc_box_of_beasts';
-      return `<div class="qs${n ? '' : ' empty'}" data-q="${i}">${icon(tile, 32)}<span class="qn">${n}</span></div>`;
+      return `<div class="qs${n ? '' : ' empty'}${q === armed ? ' armed' : ''}" data-q="${i}">${icon(tile, 32)}<span class="qn">${n}</span></div>`;
     }).join('');
     // visible enemies
     const foes = enemiesInView(run).sort((a, b) => dist(a, p) - dist(b, p)).slice(0, 5);
+    const aimable = this.targeting ? new Set(this.targetFoes()) : null;
+    const cursor = this.renderer.cursor;
     this.foesEl.innerHTML = foes.map((m) => {
       const d = MONSTERS[m.def];
       const col = { trivial: '#888', easy: '#8fdf7a', tough: '#ffb35c', nasty: '#ff6a5c' }[threat(run, m)];
-      return `<div class="foe" data-foe="${m.x},${m.y}" style="border-color:${col}">${icon(m.tile ?? d.tile, 26, m.id)}<i style="width:${Math.max(0, 100 * m.hp / m.maxHp)}%"></i></div>`;
+      const cls = aimable ? (aimable.has(m) ? '' : ' far') + (cursor && cursor.x === m.x && cursor.y === m.y ? ' tgt' : '') : '';
+      return `<div class="foe${cls}" data-foe="${m.x},${m.y}" style="border-color:${col}">${icon(m.tile ?? d.tile, 26, m.id)}<i style="width:${Math.max(0, 100 * m.hp / m.maxHp)}%"></i></div>`;
     }).join('');
     // context buttons
     const l = cur(run);
@@ -521,6 +689,7 @@ export class GameUI {
     if (t === T.ALTAR && l.features.some((f) => f.kind === 'shrine' && f.x === p.x && f.y === p.y && !f.used)) ctx += `<button class="btn" data-c="shrine">Shrine</button>`;
     if (t === T.ALTAR && l.features.some((f) => f.kind === 'altar' && f.x === p.x && f.y === p.y)) ctx += `<button class="btn" data-c="altar">Altar</button>`;
     this.ctxEl.innerHTML = ctx;
+    this.drawTarget();
     for (const b of document.querySelectorAll('#actions .act')) {
       const a = b.getAttribute('data-a');
       b.classList.toggle('on', !!this.auto && (a === this.auto.kind || (a === 'stairs' && this.auto.kind === 'stairs')));
