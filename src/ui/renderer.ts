@@ -72,7 +72,8 @@ export class Renderer {
     this.dpr = Math.min(3, window.devicePixelRatio || 1);
     this.canvas.width = Math.round(r.width * this.dpr);
     this.canvas.height = Math.round(r.height * this.dpr);
-    this.ts = Math.max(16, Math.floor(this.canvas.width / this.cells));
+    // `cells` tiles across the shorter side: the same zoom on a portrait phone and a landscape desktop map
+    this.ts = Math.max(16, Math.floor(Math.min(this.canvas.width, this.canvas.height) / this.cells));
   }
 
   setZoom(cells: number) { this.cells = cells; this.resize(); }

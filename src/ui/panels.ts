@@ -517,7 +517,21 @@ export function help(ui: GameUI) {
     <p>When you level up, tap <b>LEVEL UP</b>, pick a talent and tap <b>Learn</b>. Your build is yours to make.</p>
     <p>Potions, scrolls, wands and jewellery are <b>unidentified</b> until you try them. Living dangerously is part of it.</p>
     <p>Death is permanent. Your game saves automatically after every move; close the tab whenever you like.</p>
-    <p class="m-dim">Keyboard: arrows / hjklyubn to move, o explore, Tab fight, r rest, &gt; stairs, g pick up, i bag, a abilities, c character, m map, F1–F6 quick bar.</p>
+    <p><b>On a computer</b>: click is tap, right-click looks, the mouse wheel zooms. Keys:</p>
+    <div class="keys">
+      <kbd>arrows</kbd><span>move (also hjkl yubn, numpad)</span>
+      <kbd>. 5 s</kbd><span>wait a turn</span>
+      <kbd>o</kbd><span>explore</span>
+      <kbd>Tab</kbd><span>fight the nearest enemy</span>
+      <kbd>r</kbd><span>rest</span>
+      <kbd>&gt; &lt;</kbd><span>stairs</span>
+      <kbd>g ,</kbd><span>pick up</span>
+      <kbd>i a c</kbd><span>bag, abilities, character</span>
+      <kbd>m</kbd><span>map</span>
+      <kbd>F1–F6</kbd><span>quick bar; Tab cycles targets, Enter fires, Esc cancels</span>
+      <kbd>Esc</kbd><span>menu, or stop what you are doing</span>
+      <kbd>?</kbd><span>this help</span>
+    </div>
     <div class="btnrow"><button class="btn primary" data-close>Got it</button></div></div>`, { center: true, onClose: () => ui.showPopups() });
 }
 

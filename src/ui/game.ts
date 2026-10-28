@@ -45,6 +45,11 @@ export class GameUI {
   foesEl!: HTMLElement;
   mapBtn!: HTMLElement;
   wrapEl!: HTMLElement;
+  /** Wide-screen side panel (log, nearby, stats, keys); hidden by CSS below 900px and only filled while `wide` matches. */
+  sideLog!: HTMLElement;
+  sideFoes!: HTMLElement;
+  sideStats!: HTMLElement;
+  wide = window.matchMedia('(min-width: 900px)');
   auto: Auto = null;
   targeting: Targeting | null = null;
   /** The monster last aimed at; the default target while it stays valid (not saved). */
@@ -77,6 +82,7 @@ export class GameUI {
     window.addEventListener('keydown', this.onKey);
     document.addEventListener('visibilitychange', this.onHide);
     window.addEventListener('pagehide', this.onHide);
+    this.wide.addEventListener('change', this.onWide);
     this.refresh();
     if (!this.settings.seenIntro) { this.settings.seenIntro = true; saveSettings(this.settings); P.help(this); }
     else this.showPopups();
@@ -103,10 +109,12 @@ export class GameUI {
     window.removeEventListener('keydown', this.onKey);
     document.removeEventListener('visibilitychange', this.onHide);
     window.removeEventListener('pagehide', this.onHide);
+    this.wide.removeEventListener('change', this.onWide);
     this.root.innerHTML = '';
   }
 
   onResize = () => { this.renderer.resize(); };
+  onWide = () => { this.renderer.resize(); this.refresh(); };
   onHide = () => { saveRun(this.run); };
 
   build() {
@@ -129,7 +137,26 @@ export class GameUI {
     actions.innerHTML =
       A('explore', 'gui/commands/explore', 'Explore') + A('fight', 'gui/commands/autofight', 'Fight') + A('rest', 'gui/commands/resting', 'Rest') +
       A('stairs', 'gui/commands/find_downstair', 'Stairs') + A('bag', 'gui/commands/inventory', 'Bag') + A('menu', 'gui/commands/game_menu', 'Menu');
-    r.append(this.hud, wrap, this.quickEl, actions);
+    const side = el('div'); side.id = 'side';
+    this.sideLog = el('div'); this.sideLog.id = 'side-log';
+    this.sideFoes = el('div'); this.sideFoes.id = 'side-foes';
+    this.sideStats = el('div'); this.sideStats.id = 'side-stats';
+    const keys = el('div'); keys.id = 'side-keys';
+    const K = (k: string, w: string) => `<kbd>${k}</kbd> ${w}`;
+    keys.innerHTML = [K('←↑→↓', 'move'), K('hjkl yubn', 'move'), K('.', 'wait'), K('o', 'explore'), K('Tab', 'fight'), K('r', 'rest'), K('&gt;', 'stairs'), K('g', 'pick up'), K('i', 'bag'), K('a', 'abilities'), K('c', 'character'), K('m', 'map'), K('F1–F6', 'quick bar'), K('right-click', 'look'), K('wheel', 'zoom'), K('?', 'help')].join(' · ');
+    const sh = (t: string) => { const h = el('div', 'side-h'); h.textContent = t; return h; };
+    side.append(sh('Messages'), this.sideLog, sh('Nearby'), this.sideFoes, sh('Character'), this.sideStats, sh('Keys'), keys);
+    r.append(this.hud, wrap, this.quickEl, actions, side);
+    this.sideFoes.addEventListener('click', (e) => {
+      const f = (e.target as HTMLElement).closest('[data-foe]')?.getAttribute('data-foe');
+      if (!f) return;
+      const [x, y] = f.split(',').map(Number);
+      if (!this.targeting) { P.examine(this, { x, y }); return; }
+      const m = this.targetFoes().find((o) => o.x === x && o.y === y);
+      if (m) this.setTarget(m);
+      else toast(this.root, dist({ x, y }, this.run.player) > this.targeting.range ? 'Out of range' : 'Not in sight');
+    });
+    this.sideStats.addEventListener('click', () => P.character(this));
     this.renderer = new Renderer(this.canvas);
     this.renderer.resize();
     // a tap right after a sheet closes is the same mashing thumb: it must not fall through to Fight
@@ -208,6 +235,8 @@ export class GameUI {
     let pinch: { d: number; cells: number } | null = null;
     const pointers = new Map<number, { x: number; y: number }>();
     c.addEventListener('pointerdown', (e) => {
+      // mouse: right button looks, the middle one is ignored
+      if (e.pointerType === 'mouse' && e.button !== 0) { if (e.button === 2) P.examine(this, this.renderer.cellAt(this.run, e.clientX, e.clientY)); return; }
       c.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pointers.size === 2) {
@@ -266,6 +295,16 @@ export class GameUI {
     c.addEventListener('pointerup', end);
     c.addEventListener('pointercancel', (e) => { pointers.delete(e.pointerId); start = null; pinch = null; clearTimeout(longTimer); });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
+    // mouse wheel zooms like a pinch (one cell per notch, same 7..19 band)
+    let wheelAt = 0;
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const now = performance.now();
+      if (now - wheelAt < 80) return;
+      wheelAt = now;
+      const cells = Math.max(7, Math.min(19, this.renderer.cells + (e.deltaY > 0 ? 1 : -1)));
+      if (cells !== this.renderer.cells) this.renderer.setZoom(cells);
+    }, { passive: false });
   }
 
   onTap(cell: Pos) {
@@ -339,6 +378,8 @@ export class GameUI {
     if (k === 'a') return P.abilities(this);
     if (k === 'c' || k === '@') return P.character(this);
     if (k === 'm') return this.toggleMinimap();
+    if (k === '?') return P.help(this);
+    if (k === 'Escape') { if (this.auto) return this.stopAuto(); return P.mainMenu(this); }
     if (/^F[1-6]$/.test(k)) { e.preventDefault(); this.useQuick(+k.slice(1) - 1); }
   };
 
@@ -727,11 +768,34 @@ export class GameUI {
     if (t === T.ALTAR && l.features.some((f) => f.kind === 'shrine' && f.x === p.x && f.y === p.y && !f.used)) ctx += `<button class="btn" data-c="shrine">Shrine</button>`;
     if (t === T.ALTAR && l.features.some((f) => f.kind === 'altar' && f.x === p.x && f.y === p.y)) ctx += `<button class="btn" data-c="altar">Altar</button>`;
     this.ctxEl.innerHTML = ctx;
+    if (this.wide.matches) this.refreshSide(foes, aimable, cursor);
     this.drawTarget();
     for (const b of document.querySelectorAll('#actions .act')) {
       const a = b.getAttribute('data-a');
       b.classList.toggle('on', !!this.auto && (a === this.auto.kind || (a === 'stairs' && this.auto.kind === 'stairs')));
     }
+  }
+
+  /** Wide-screen side panel: a longer log, the visible enemies by name, and a stat summary. */
+  refreshSide(foes: Monster[], aimable: Set<Monster> | null, cursor: Pos | null) {
+    const run = this.run;
+    const p = run.player;
+    const s = playerStats(run);
+    const msgs = run.messages.slice(-60);
+    const html = msgs.map((m, i) => `<div class="${m.cls ? 'm-' + m.cls : ''}${m.turn < run.turn - 1 && i < msgs.length - 2 ? ' old' : ''}">${esc(m.text)}</div>`).join('');
+    if (html !== this.sideLog.innerHTML) { this.sideLog.innerHTML = html; this.sideLog.scrollTop = this.sideLog.scrollHeight; }
+    this.sideFoes.innerHTML = foes.length ? foes.map((m) => {
+      const d = MONSTERS[m.def];
+      const col = { trivial: '#888', easy: '#8fdf7a', tough: '#ffb35c', nasty: '#ff6a5c' }[threat(run, m)];
+      const cls = aimable ? (aimable.has(m) ? '' : ' far') + (cursor && cursor.x === m.x && cursor.y === m.y ? ' tgt' : '') : '';
+      const n = name(run, m, false);
+      return `<div class="sfoe${cls}" data-foe="${m.x},${m.y}" style="color:${col}">${icon(m.tile ?? d.tile, 24, m.id)}<span class="nm">${esc(n.charAt(0).toUpperCase() + n.slice(1))}</span><div class="bar"><i style="width:${Math.max(0, 100 * m.hp / m.maxHp)}%"></i></div></div>`;
+    }).join('') : '<div class="m-dim" style="padding:2px 4px;font-size:13px">Nothing in sight.</div>';
+    this.sideStats.innerHTML = `<div class="statgrid">
+      <div>Attack<b>${s.acc} / ${s.dmg >= 0 ? '+' : ''}${s.dmg}</b></div><div>Weapon<b>${esc(s.weapon.name)}</b></div>
+      <div>Armour<b>${s.ac}</b></div><div>Evasion<b>${s.ev}</b></div>
+      <div>Gold<b>${p.gold}</b></div><div>Turn<b>${run.turn}</b></div>
+    </div>`;
   }
 
   itemLabel(id: number): string {
